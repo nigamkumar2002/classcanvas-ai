@@ -85,10 +85,14 @@ const ClassesPage = () => {
 
   const handleCreateClass = async () => {
     if (!className.trim()) { setFormError('Class name required'); return; }
+    if (!user?.school_id) { setFormError('Your account is not assigned to a school. Please contact your administrator.'); return; }
     setFormLoading(true); setFormError('');
     const { error } = await supabase.from('classes').insert({
-      name: className.trim(), description: classDesc.trim() || null,
-      grade_level: classGrade ? parseInt(classGrade) : null, created_by: user?.user_id,
+      name: className.trim(),
+      description: classDesc.trim() || null,
+      grade_level: classGrade ? parseInt(classGrade) : null,
+      created_by: user?.user_id,
+      school_id: user.school_id,
     } as any);
     if (error) { setFormError(error.message); } else {
       setAddClassModal(false); setClassName(''); setClassDesc(''); setClassGrade('');
@@ -99,10 +103,14 @@ const ClassesPage = () => {
 
   const handleCreateSubject = async () => {
     if (!subjectName.trim() || !addSubjectModal.classId) { setFormError('Subject name required'); return; }
+    if (!user?.school_id) { setFormError('Your account is not assigned to a school. Please contact your administrator.'); return; }
     setFormLoading(true); setFormError('');
     const { error } = await supabase.from('subjects').insert({
-      class_id: addSubjectModal.classId, name: subjectName.trim(), color: subjectColor,
+      class_id: addSubjectModal.classId,
+      name: subjectName.trim(),
+      color: subjectColor,
       teacher_id: user?.user_id,
+      school_id: user.school_id,
     } as any);
     if (error) { setFormError(error.message); } else {
       setAddSubjectModal({ open: false }); setSubjectName(''); setSubjectColor(SUBJECT_COLORS[0]);
@@ -113,9 +121,13 @@ const ClassesPage = () => {
 
   const handleCreateChapter = async () => {
     if (!chapterName.trim() || !addChapterModal.subjectId) { setFormError('Chapter name required'); return; }
+    if (!user?.school_id) { setFormError('Your account is not assigned to a school. Please contact your administrator.'); return; }
     setFormLoading(true); setFormError('');
     const { error } = await supabase.from('chapters').insert({
-      subject_id: addChapterModal.subjectId, name: chapterName.trim(), description: chapterDesc.trim() || null,
+      subject_id: addChapterModal.subjectId,
+      name: chapterName.trim(),
+      description: chapterDesc.trim() || null,
+      school_id: user.school_id,
     } as any);
     if (error) { setFormError(error.message); } else {
       setAddChapterModal({ open: false }); setChapterName(''); setChapterDesc('');

@@ -54,6 +54,10 @@ const ContentUploadModal: React.FC<Props> = ({ chapterId, onClose, onSuccess }) 
         file_size = file.size;
       }
 
+      if (!user?.school_id) {
+        throw new Error('Your account is not assigned to a school. Please contact your administrator.');
+      }
+
       const { error: insertError } = await supabase.from('materials').insert({
         chapter_id: chapterId,
         title: title.trim(),
@@ -63,6 +67,7 @@ const ContentUploadModal: React.FC<Props> = ({ chapterId, onClose, onSuccess }) 
         file_type,
         file_size,
         uploaded_by: user?.user_id,
+        school_id: user.school_id,
       } as any);
 
       if (insertError) throw insertError;
