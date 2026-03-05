@@ -83,12 +83,27 @@ const UsersPage = () => {
 
   // Load classes when creating a student
   useEffect(() => {
-    if (form.role === 'student' && showAdd) {
-      supabase.from('classes').select('id, name').order('name').then(({ data }) => {
-        setAvailableClasses(data || []);
-      });
+    if (form.role !== 'student' || !showAdd) {
+      setAvailableClasses([]);
+      return;
     }
-  }, [form.role, showAdd]);
+
+    let query = supabase.from('classes').select('id, name').order('name');
+
+    if (isDeveloper) {
+      if (!form.school_id) {
+        setAvailableClasses([]);
+        return;
+      }
+      query = query.eq('school_id', form.school_id);
+    } else if (user?.school_id) {
+      query = query.eq('school_id', user.school_id);
+    }
+
+    query.then(({ data }) => {
+      setAvailableClasses(data || []);
+    });
+  }, [form.role, showAdd, form.school_id, isDeveloper, user?.school_id]);
 
   const handleAddUser = async () => {
     if (!form.full_name.trim() || !form.email.trim() || !form.password.trim()) {
@@ -97,6 +112,9 @@ const UsersPage = () => {
     if (form.password.length < 6) { setAddError('Password must be at least 6 characters'); return; }
     if (isDeveloper && !form.school_id && form.role !== 'developer') {
       setAddError('Please select a school for this user'); return;
+    }
+    if (form.role === 'student' && !form.class_id) {
+      setAddError('Please assign a class for this student'); return;
     }
     setAdding(true); setAddError(''); setAddSuccess('');
 

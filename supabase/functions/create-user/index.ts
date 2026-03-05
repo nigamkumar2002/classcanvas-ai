@@ -68,6 +68,31 @@ Deno.serve(async (req) => {
     // Determine school_id: developer passes it explicitly, others inherit their own
     const assignedSchoolId = requestingRole === 'developer' ? (school_id || null) : (reqProfile?.school_id || null);
 
+    if (role !== 'developer' && !assignedSchoolId) {
+      return new Response(JSON.stringify({ error: 'Target school is required for this user role' }), { status: 400, headers: corsHeaders });
+    }
+
+    // Validate class assignment for students
+    if (role === 'student' && !class_id) {
+      return new Response(JSON.stringify({ error: 'Student must be assigned to a class' }), { status: 400, headers: corsHeaders });
+    }
+
+    if (role === 'student' && class_id) {
+      const { data: classRecord, error: classError } = await supabaseAdmin
+        .from('classes')
+        .select('id, school_id')
+        .eq('id', class_id)
+        .single();
+
+      if (classError || !classRecord) {
+        return new Response(JSON.stringify({ error: 'Invalid class selected' }), { status: 400, headers: corsHeaders });
+      }
+
+      if (assignedSchoolId && classRecord.school_id !== assignedSchoolId) {
+        return new Response(JSON.stringify({ error: 'Selected class does not belong to the assigned school' }), { status: 400, headers: corsHeaders });
+      }
+    }
+
     // Create the auth user
     const { data: newUser, error: createError } = await supabaseAdmin.auth.admin.createUser({
       email,
@@ -88,10 +113,8 @@ Deno.serve(async (req) => {
       role,
       is_demo: false,
       school_id: assignedSchoolId,
+      class_id: role === 'student' ? class_id : null,
     };
-    if (role === 'student' && class_id) {
-      profileData.class_id = class_id;
-    }
     await supabaseAdmin.from('profiles').insert(profileData);
 
     // Insert user role
