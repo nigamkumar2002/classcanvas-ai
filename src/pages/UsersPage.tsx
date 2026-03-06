@@ -137,7 +137,9 @@ const UsersPage = () => {
     }
   };
 
+  // Hide demo users for non-developer roles for professional appearance
   const filteredUsers = users.filter(u => {
+    if (!isDeveloper && u.is_demo) return false;
     const matchSearch = u.full_name.toLowerCase().includes(search.toLowerCase()) ||
       u.email.toLowerCase().includes(search.toLowerCase());
     const matchRole = filterRole === 'all' || u.role === filterRole;

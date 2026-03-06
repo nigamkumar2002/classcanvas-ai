@@ -3,16 +3,18 @@ import { NavLink, useNavigate } from 'react-router-dom';
 import {
   GraduationCap, LayoutDashboard, BookOpen, Users, Settings,
   LogOut, ChevronLeft, ChevronRight, PlayCircle, FileText,
-  BarChart3, School, Upload, ClipboardList, Bell, Search, Menu, Calendar, Code2
+  BarChart3, School, Upload, ClipboardList, Search, Menu, Calendar, Megaphone
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
+import NotificationDropdown from '@/components/NotificationDropdown';
 
 const ROLE_MENUS: Record<string, { label: string; icon: React.ElementType; path: string }[]> = {
   developer: [
     { label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
     { label: 'Schools', icon: School, path: '/schools' },
     { label: 'All Users', icon: Users, path: '/users' },
+    { label: 'Announcements', icon: Megaphone, path: '/announcements' },
     { label: 'Analytics', icon: BarChart3, path: '/analytics' },
     { label: 'Settings', icon: Settings, path: '/settings' },
   ],
@@ -20,6 +22,7 @@ const ROLE_MENUS: Record<string, { label: string; icon: React.ElementType; path:
     { label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
     { label: 'Schools', icon: School, path: '/schools' },
     { label: 'All Users', icon: Users, path: '/users' },
+    { label: 'Announcements', icon: Megaphone, path: '/announcements' },
     { label: 'Analytics', icon: BarChart3, path: '/analytics' },
     { label: 'Settings', icon: Settings, path: '/settings' },
   ],
@@ -29,6 +32,7 @@ const ROLE_MENUS: Record<string, { label: string; icon: React.ElementType; path:
     { label: 'Content', icon: FileText, path: '/content' },
     { label: 'Users', icon: Users, path: '/users' },
     { label: 'Calendar', icon: Calendar, path: '/calendar' },
+    { label: 'Announcements', icon: Megaphone, path: '/announcements' },
     { label: 'Analytics', icon: BarChart3, path: '/analytics' },
     { label: 'Settings', icon: Settings, path: '/settings' },
   ],
@@ -40,6 +44,7 @@ const ROLE_MENUS: Record<string, { label: string; icon: React.ElementType; path:
     { label: 'Calendar', icon: Calendar, path: '/calendar' },
     { label: 'Exams', icon: ClipboardList, path: '/exams' },
     { label: 'My Students', icon: Users, path: '/students' },
+    { label: 'Announcements', icon: Megaphone, path: '/announcements' },
   ],
   student: [
     { label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
@@ -47,6 +52,7 @@ const ROLE_MENUS: Record<string, { label: string; icon: React.ElementType; path:
     { label: 'Live Class', icon: PlayCircle, path: '/live-class' },
     { label: 'Calendar', icon: Calendar, path: '/calendar' },
     { label: 'Exams', icon: ClipboardList, path: '/exams' },
+    { label: 'Settings', icon: Settings, path: '/settings' },
   ],
 };
 
@@ -200,10 +206,7 @@ const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
             </div>
           </div>
           <div className="flex items-center gap-3">
-            <button className="relative p-2 rounded-xl hover:bg-muted transition-colors">
-              <Bell className="w-5 h-5 text-muted-foreground" />
-              <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-red-500" />
-            </button>
+            <NotificationDropdown />
             <div className="flex items-center gap-2">
               <div className="w-9 h-9 rounded-full bg-gradient-hero flex items-center justify-center">
                 <span className="text-white text-sm font-bold">
