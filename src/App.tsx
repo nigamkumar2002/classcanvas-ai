@@ -15,6 +15,7 @@ import SchoolsPage from "@/pages/SchoolsPage";
 import AnalyticsPage from "@/pages/AnalyticsPage";
 import SettingsPage from "@/pages/SettingsPage";
 import CalendarPage from "@/pages/CalendarPage";
+import AnnouncementsPage from "@/pages/AnnouncementsPage";
 import NotFound from "./pages/NotFound";
 
 const AppRoutes = () => {
@@ -55,6 +56,7 @@ const AppRoutes = () => {
       <Route path="/analytics" element={wrap(AnalyticsPage)} />
       <Route path="/settings" element={wrap(SettingsPage)} />
       <Route path="/calendar" element={wrap(CalendarPage)} />
+      <Route path="/announcements" element={wrap(AnnouncementsPage)} />
 
       <Route path="*" element={<NotFound />} />
     </Routes>

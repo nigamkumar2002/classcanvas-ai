@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
-import { BarChart3, BookOpen, Users, FileText, PlayCircle, ClipboardList, ChevronRight, School, Clock } from 'lucide-react';
+import { BarChart3, BookOpen, Users, FileText, PlayCircle, ClipboardList, ChevronRight, School, Clock, Megaphone } from 'lucide-react';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
 import { Link } from 'react-router-dom';
+import AnnouncementBanner from '@/components/AnnouncementBanner';
 
 interface Stats {
   classes: number; subjects: number; chapters: number; materials: number;
@@ -44,7 +45,6 @@ const Dashboard = () => {
           const { count: sc } = await supabase.from('schools').select('*', { count: 'exact', head: true });
           schoolCount = sc || 0;
         } else if (user?.school_id) {
-          // Count teachers and students only within the current user's school
           const [teachR, studR] = await Promise.all([
             supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('school_id', user.school_id).eq('role', 'teacher'),
             supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('school_id', user.school_id).eq('role', 'student'),
@@ -69,7 +69,6 @@ const Dashboard = () => {
         setUpcomingEvents(schedR.data || []);
         setActiveSession(activeSessionData);
 
-        // Subject chart data
         if (subR.count && subR.count > 0) {
           const { data: subs } = await supabase.from('subjects').select('id, name');
           if (subs) {
@@ -124,6 +123,8 @@ const Dashboard = () => {
 
   return (
     <div className="space-y-6">
+      <AnnouncementBanner />
+
       <div className="bg-gradient-hero rounded-2xl p-6 text-white relative overflow-hidden">
         <div className="absolute right-0 top-0 w-64 h-full opacity-10">
           <div className="w-64 h-64 rounded-full border-4 border-white absolute -top-8 -right-8" />
