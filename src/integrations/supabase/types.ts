@@ -14,6 +14,53 @@ export type Database = {
   }
   public: {
     Tables: {
+      announcements: {
+        Row: {
+          created_at: string
+          created_by: string
+          expires_at: string | null
+          id: string
+          is_active: boolean
+          message: string
+          school_id: string | null
+          target_role: string | null
+          title: string
+          type: string
+        }
+        Insert: {
+          created_at?: string
+          created_by: string
+          expires_at?: string | null
+          id?: string
+          is_active?: boolean
+          message: string
+          school_id?: string | null
+          target_role?: string | null
+          title: string
+          type?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string
+          expires_at?: string | null
+          id?: string
+          is_active?: boolean
+          message?: string
+          school_id?: string | null
+          target_role?: string | null
+          title?: string
+          type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "announcements_school_id_fkey"
+            columns: ["school_id"]
+            isOneToOne: false
+            referencedRelation: "schools"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       chapters: {
         Row: {
           created_at: string
@@ -214,15 +261,52 @@ export type Database = {
           },
         ]
       }
+      live_session_participants: {
+        Row: {
+          approved_at: string | null
+          id: string
+          joined_at: string | null
+          session_id: string
+          status: string
+          user_id: string
+        }
+        Insert: {
+          approved_at?: string | null
+          id?: string
+          joined_at?: string | null
+          session_id: string
+          status?: string
+          user_id: string
+        }
+        Update: {
+          approved_at?: string | null
+          id?: string
+          joined_at?: string | null
+          session_id?: string
+          status?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "live_session_participants_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "live_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       live_sessions: {
         Row: {
           annotations: Json | null
           chapter_id: string | null
+          class_id: string | null
           created_at: string
           current_material_id: string | null
           current_page: number | null
           ended_at: string | null
           id: string
+          join_code: string | null
           school_id: string | null
           started_at: string | null
           status: string
@@ -232,11 +316,13 @@ export type Database = {
         Insert: {
           annotations?: Json | null
           chapter_id?: string | null
+          class_id?: string | null
           created_at?: string
           current_material_id?: string | null
           current_page?: number | null
           ended_at?: string | null
           id?: string
+          join_code?: string | null
           school_id?: string | null
           started_at?: string | null
           status?: string
@@ -246,11 +332,13 @@ export type Database = {
         Update: {
           annotations?: Json | null
           chapter_id?: string | null
+          class_id?: string | null
           created_at?: string
           current_material_id?: string | null
           current_page?: number | null
           ended_at?: string | null
           id?: string
+          join_code?: string | null
           school_id?: string | null
           started_at?: string | null
           status?: string
@@ -258,6 +346,13 @@ export type Database = {
           title?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "live_sessions_class_id_fkey"
+            columns: ["class_id"]
+            isOneToOne: false
+            referencedRelation: "classes"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "live_sessions_school_id_fkey"
             columns: ["school_id"]
@@ -335,6 +430,74 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      notifications: {
+        Row: {
+          created_at: string
+          id: string
+          is_read: boolean
+          link: string | null
+          message: string | null
+          school_id: string | null
+          title: string
+          type: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_read?: boolean
+          link?: string | null
+          message?: string | null
+          school_id?: string | null
+          title: string
+          type?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_read?: boolean
+          link?: string | null
+          message?: string | null
+          school_id?: string | null
+          title?: string
+          type?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notifications_school_id_fkey"
+            columns: ["school_id"]
+            isOneToOne: false
+            referencedRelation: "schools"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      platform_settings: {
+        Row: {
+          id: string
+          key: string
+          updated_at: string
+          updated_by: string | null
+          value: Json
+        }
+        Insert: {
+          id?: string
+          key: string
+          updated_at?: string
+          updated_by?: string | null
+          value?: Json
+        }
+        Update: {
+          id?: string
+          key?: string
+          updated_at?: string
+          updated_by?: string | null
+          value?: Json
+        }
+        Relationships: []
       }
       profiles: {
         Row: {
