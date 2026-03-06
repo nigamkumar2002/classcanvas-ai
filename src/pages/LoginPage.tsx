@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Lock, Eye, EyeOff, GraduationCap, Shield, ChevronDown, ChevronRight } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/integrations/supabase/client';
 import { cn } from '@/lib/utils';
 
 const DEMO_CREDS = [
@@ -19,6 +20,26 @@ const LoginPage = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [showCreds, setShowCreds] = useState(true);
+  const [demosVisible, setDemosVisible] = useState(true);
+
+  // Check platform setting for demo credentials visibility
+  useEffect(() => {
+    const checkSetting = async () => {
+      try {
+        const { data } = await supabase
+          .from('platform_settings')
+          .select('value')
+          .eq('key', 'show_demo_credentials')
+          .single();
+        if (data) {
+          setDemosVisible(data.value === true || data.value === 'true');
+        }
+      } catch {
+        // Default to visible if setting doesn't exist
+      }
+    };
+    checkSetting();
+  }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -44,40 +65,43 @@ const LoginPage = () => {
         <div className="absolute -bottom-40 -left-40 w-96 h-96 rounded-full bg-indigo-500/10 blur-3xl" />
       </div>
 
-      <div className="relative w-full max-w-5xl mx-auto grid lg:grid-cols-2 gap-8 items-center">
-        <div className="hidden lg:flex flex-col gap-8">
-          <div className="flex items-center gap-4">
-            <div className="w-16 h-16 rounded-2xl bg-gradient-hero flex items-center justify-center shadow-glow-blue">
-              <GraduationCap className="w-9 h-9 text-white" />
-            </div>
-            <div>
-              <h1 className="text-3xl font-bold text-white" style={{fontFamily: 'Poppins, sans-serif'}}>EduCloud LMS</h1>
-              <p className="text-blue-300 text-sm">Professional School Learning Platform</p>
-            </div>
-          </div>
-          <div className="space-y-4">
-            {[
-              { icon: '📚', title: 'Structured Learning', desc: 'Class → Subject → Chapter hierarchy' },
-              { icon: '🎯', title: 'Smart Board Mode', desc: 'Real-time PDF teaching & annotation' },
-              { icon: '⚡', title: 'Live Classes', desc: 'Sync content to all students instantly' },
-              { icon: '🏫', title: 'Multi-School Support', desc: 'Isolated data per school with developer management' },
-            ].map((f) => (
-              <div key={f.title} className="flex items-start gap-4 p-4 rounded-2xl bg-white/5 border border-white/10">
-                <span className="text-2xl">{f.icon}</span>
-                <div>
-                  <p className="text-white font-semibold text-sm">{f.title}</p>
-                  <p className="text-blue-300 text-xs mt-0.5">{f.desc}</p>
-                </div>
+      <div className={cn("relative w-full mx-auto grid items-center", demosVisible ? "max-w-5xl lg:grid-cols-2 gap-8" : "max-w-md")}>
+        {demosVisible && (
+          <div className="hidden lg:flex flex-col gap-8">
+            <div className="flex items-center gap-4">
+              <div className="w-16 h-16 rounded-2xl bg-gradient-hero flex items-center justify-center shadow-glow-blue">
+                <GraduationCap className="w-9 h-9 text-white" />
               </div>
-            ))}
+              <div>
+                <h1 className="text-3xl font-bold text-white" style={{fontFamily: 'Poppins, sans-serif'}}>EduCloud LMS</h1>
+                <p className="text-blue-300 text-sm">Professional School Learning Platform</p>
+              </div>
+            </div>
+            <div className="space-y-4">
+              {[
+                { icon: '📚', title: 'Structured Learning', desc: 'Class → Subject → Chapter hierarchy' },
+                { icon: '🎯', title: 'Smart Board Mode', desc: 'Real-time PDF teaching & annotation' },
+                { icon: '⚡', title: 'Live Classes', desc: 'Sync content to all students instantly' },
+                { icon: '🏫', title: 'Multi-School Support', desc: 'Isolated data per school with developer management' },
+                { icon: '🔔', title: 'Real-time Notifications', desc: 'Instant alerts for classes, exams & announcements' },
+              ].map((f) => (
+                <div key={f.title} className="flex items-start gap-4 p-4 rounded-2xl bg-white/5 border border-white/10">
+                  <span className="text-2xl">{f.icon}</span>
+                  <div>
+                    <p className="text-white font-semibold text-sm">{f.title}</p>
+                    <p className="text-blue-300 text-xs mt-0.5">{f.desc}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="flex items-center gap-2 text-green-400 text-sm">
+              <span>✅</span> Demo accounts ready
+            </div>
           </div>
-          <div className="flex items-center gap-2 text-green-400 text-sm">
-            <span>✅</span> Demo accounts ready
-          </div>
-        </div>
+        )}
 
         <div className="w-full">
-          <div className="flex lg:hidden items-center gap-3 mb-6 justify-center">
+          <div className={cn("flex items-center gap-3 mb-6", demosVisible ? "lg:hidden justify-center" : "justify-center")}>
             <div className="w-12 h-12 rounded-xl bg-gradient-hero flex items-center justify-center">
               <GraduationCap className="w-7 h-7 text-white" />
             </div>
@@ -119,25 +143,27 @@ const LoginPage = () => {
               </button>
             </form>
 
-            <div className="mt-6">
-              <button onClick={() => setShowCreds(!showCreds)}
-                className="w-full flex items-center justify-between text-blue-300 text-sm font-medium py-2 px-3 rounded-xl hover:bg-white/5 transition-colors">
-                <span className="flex items-center gap-2"><Shield className="w-4 h-4" />Demo Credentials</span>
-                {showCreds ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-              </button>
-              {showCreds && (
-                <div className="mt-3 grid grid-cols-2 gap-2">
-                  {DEMO_CREDS.map((cred) => (
-                    <button key={cred.label} onClick={() => fillCreds(cred)}
-                      className={cn("relative p-3 rounded-xl text-left transition-all hover:scale-105 group", `bg-gradient-to-br ${cred.color} opacity-80 hover:opacity-100`)}>
-                      <div className="text-lg mb-1">{cred.icon}</div>
-                      <p className="text-white text-xs font-bold">{cred.label}</p>
-                      <p className="text-white/70 text-[10px]">{cred.role}</p>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
+            {demosVisible && (
+              <div className="mt-6">
+                <button onClick={() => setShowCreds(!showCreds)}
+                  className="w-full flex items-center justify-between text-blue-300 text-sm font-medium py-2 px-3 rounded-xl hover:bg-white/5 transition-colors">
+                  <span className="flex items-center gap-2"><Shield className="w-4 h-4" />Demo Credentials</span>
+                  {showCreds ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                </button>
+                {showCreds && (
+                  <div className="mt-3 grid grid-cols-2 gap-2">
+                    {DEMO_CREDS.map((cred) => (
+                      <button key={cred.label} onClick={() => fillCreds(cred)}
+                        className={cn("relative p-3 rounded-xl text-left transition-all hover:scale-105 group", `bg-gradient-to-br ${cred.color} opacity-80 hover:opacity-100`)}>
+                        <div className="text-lg mb-1">{cred.icon}</div>
+                        <p className="text-white text-xs font-bold">{cred.label}</p>
+                        <p className="text-white/70 text-[10px]">{cred.role}</p>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
             <p className="text-center text-white/30 text-xs mt-6">🔒 Secure enterprise authentication · No public signup</p>
           </div>
         </div>

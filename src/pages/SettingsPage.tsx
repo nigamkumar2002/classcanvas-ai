@@ -1,12 +1,51 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { Settings, User, Bell, Shield, Globe, Save, Lock } from 'lucide-react';
+import { supabase } from '@/integrations/supabase/client';
+import { Settings, User, Bell, Shield, Globe, Save, Lock, Eye, EyeOff } from 'lucide-react';
+import { toast } from 'sonner';
 
 const SettingsPage = () => {
   const { user } = useAuth();
   const [notifications, setNotifications] = useState({ email: true, liveClass: true, exams: true, assignments: false });
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [showDemoCredentials, setShowDemoCredentials] = useState(true);
+  const [loadingSettings, setLoadingSettings] = useState(false);
+
+  const isDemo = user?.is_demo ?? false;
+  const isDeveloper = user?.role === 'developer';
+
+  // Load platform settings for developer
+  useEffect(() => {
+    if (!isDeveloper) return;
+    const load = async () => {
+      const { data } = await supabase
+        .from('platform_settings')
+        .select('value')
+        .eq('key', 'show_demo_credentials')
+        .single();
+      if (data) {
+        setShowDemoCredentials(data.value === true || data.value === 'true');
+      }
+    };
+    load();
+  }, [isDeveloper]);
+
+  const toggleDemoCredentials = async () => {
+    setLoadingSettings(true);
+    const newValue = !showDemoCredentials;
+    const { error } = await supabase
+      .from('platform_settings')
+      .update({ value: newValue, updated_by: user?.user_id, updated_at: new Date().toISOString() } as any)
+      .eq('key', 'show_demo_credentials');
+    if (error) {
+      toast.error('Failed to update setting');
+    } else {
+      setShowDemoCredentials(newValue);
+      toast.success(newValue ? 'Demo credentials are now visible on login' : 'Demo credentials are now hidden from login');
+    }
+    setLoadingSettings(false);
+  };
 
   const handleSave = async () => {
     setSaving(true);
@@ -15,8 +54,6 @@ const SettingsPage = () => {
     setSaved(true);
     setTimeout(() => setSaved(false), 3000);
   };
-
-  const isDemo = user?.is_demo ?? false;
 
   return (
     <div className="space-y-6 max-w-2xl">
@@ -36,6 +73,7 @@ const SettingsPage = () => {
 
         <div className="flex items-center gap-4 mb-6 p-4 rounded-xl bg-muted/30">
           <div className={`w-16 h-16 rounded-full flex items-center justify-center text-white font-bold text-xl ${
+            user?.role === 'developer' ? 'bg-gradient-blue' :
             user?.role === 'super_admin' ? 'bg-gradient-purple' :
             user?.role === 'admin' ? 'bg-gradient-blue' :
             user?.role === 'teacher' ? 'bg-gradient-green' : 'bg-gradient-amber'
@@ -70,6 +108,41 @@ const SettingsPage = () => {
           )}
         </div>
       </div>
+
+      {/* Developer: Platform Settings */}
+      {isDeveloper && (
+        <div className="bg-card rounded-2xl border border-border shadow-card p-6">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="w-8 h-8 rounded-xl bg-gradient-purple flex items-center justify-center">
+              <Shield className="w-4 h-4 text-white" />
+            </div>
+            <h2 className="font-bold">Platform Settings</h2>
+          </div>
+          <div className="space-y-4">
+            <div className="flex items-center justify-between p-4 rounded-xl bg-muted/30 border border-border/50">
+              <div className="flex items-center gap-3">
+                {showDemoCredentials ? <Eye className="w-5 h-5 text-primary" /> : <EyeOff className="w-5 h-5 text-muted-foreground" />}
+                <div>
+                  <p className="font-medium text-sm">Demo Credentials on Login Page</p>
+                  <p className="text-xs text-muted-foreground">
+                    {showDemoCredentials ? 'Demo credentials are visible to everyone on the login page' : 'Demo credentials are hidden from the login page'}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={toggleDemoCredentials}
+                disabled={loadingSettings}
+                className={`relative w-11 h-6 rounded-full transition-colors disabled:opacity-50 ${showDemoCredentials ? 'bg-primary' : 'bg-muted-foreground/30'}`}
+              >
+                <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${showDemoCredentials ? 'translate-x-5' : 'translate-x-0'}`} />
+              </button>
+            </div>
+            <p className="text-xs text-muted-foreground px-1">
+              💡 Toggle this off for production deployments to present a professional login page without demo account information.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Notifications */}
       <div className="bg-card rounded-2xl border border-border shadow-card p-6">
@@ -119,7 +192,7 @@ const SettingsPage = () => {
         </div>
       </div>
 
-      {(user?.role === 'super_admin' || user?.role === 'admin') && (
+      {(user?.role === 'super_admin' || user?.role === 'admin' || isDeveloper) && (
         <div className="bg-card rounded-2xl border border-border shadow-card p-6">
           <div className="flex items-center gap-3 mb-6">
             <div className="w-8 h-8 rounded-xl bg-gradient-purple flex items-center justify-center">
@@ -130,9 +203,10 @@ const SettingsPage = () => {
           <div className="space-y-3">
             {[
               { label: 'Platform', value: 'EduCloud LMS' },
-              { label: 'Version', value: '2.0.0 Professional' },
+              { label: 'Version', value: '2.1.0 Professional' },
               { label: 'Database', value: 'Cloud PostgreSQL' },
               { label: 'Real-time', value: 'Active via WebSockets' },
+              { label: 'Notifications', value: 'Real-time enabled' },
             ].map(item => (
               <div key={item.label} className="flex items-center justify-between py-2 border-b border-border/50 last:border-0">
                 <span className="text-sm text-muted-foreground">{item.label}</span>
