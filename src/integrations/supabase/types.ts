@@ -307,6 +307,7 @@ export type Database = {
           ended_at: string | null
           id: string
           join_code: string | null
+          meeting_link: string | null
           school_id: string | null
           started_at: string | null
           status: string
@@ -323,6 +324,7 @@ export type Database = {
           ended_at?: string | null
           id?: string
           join_code?: string | null
+          meeting_link?: string | null
           school_id?: string | null
           started_at?: string | null
           status?: string
@@ -339,6 +341,7 @@ export type Database = {
           ended_at?: string | null
           id?: string
           join_code?: string | null
+          meeting_link?: string | null
           school_id?: string | null
           started_at?: string | null
           status?: string
