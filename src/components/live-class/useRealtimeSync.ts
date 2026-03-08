@@ -14,6 +14,7 @@ export interface BoardState {
 }
 
 export interface SerializedAnnotation {
+  id: string;
   tool: 'pen' | 'eraser' | 'highlighter';
   points: { x: number; y: number }[];
   color: string;
@@ -24,8 +25,6 @@ export interface CursorState {
   x: number;
   y: number;
   visible: boolean;
-  canvasWidth: number;
-  canvasHeight: number;
 }
 
 export interface ChatMessage {
@@ -41,6 +40,7 @@ export function useRealtimeSync(sessionId: string | null, isTeacher: boolean) {
   const [remoteBoardState, setRemoteBoardState] = useState<BoardState | null>(null);
   const [remoteCursor, setRemoteCursor] = useState<CursorState | null>(null);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [remoteDrawStroke, setRemoteDrawStroke] = useState<SerializedAnnotation | null>(null);
 
   useEffect(() => {
     if (!sessionId) return;
@@ -55,6 +55,12 @@ export function useRealtimeSync(sessionId: string | null, isTeacher: boolean) {
       })
       .on('broadcast', { event: 'cursor-move' }, ({ payload }) => {
         if (!isTeacher) setRemoteCursor(payload as CursorState);
+      })
+      .on('broadcast', { event: 'draw-stroke' }, ({ payload }) => {
+        if (!isTeacher) setRemoteDrawStroke(payload as SerializedAnnotation);
+      })
+      .on('broadcast', { event: 'clear-canvas' }, () => {
+        if (!isTeacher) setRemoteBoardState(prev => prev ? { ...prev, annotations: [] } : null);
       })
       .on('broadcast', { event: 'chat-message' }, ({ payload }) => {
         setChatMessages(prev => [...prev, payload as ChatMessage]);
@@ -73,6 +79,15 @@ export function useRealtimeSync(sessionId: string | null, isTeacher: boolean) {
     channelRef.current?.send({ type: 'broadcast', event: 'cursor-move', payload: cursor });
   }, []);
 
+  // Broadcast a single stroke (incremental, during drawing)
+  const broadcastDrawStroke = useCallback((stroke: SerializedAnnotation) => {
+    channelRef.current?.send({ type: 'broadcast', event: 'draw-stroke', payload: stroke });
+  }, []);
+
+  const broadcastClearCanvas = useCallback(() => {
+    channelRef.current?.send({ type: 'broadcast', event: 'clear-canvas', payload: {} });
+  }, []);
+
   const sendChatMessage = useCallback((msg: ChatMessage) => {
     setChatMessages(prev => [...prev, msg]);
     channelRef.current?.send({ type: 'broadcast', event: 'chat-message', payload: msg });
@@ -81,9 +96,12 @@ export function useRealtimeSync(sessionId: string | null, isTeacher: boolean) {
   return {
     remoteBoardState,
     remoteCursor,
+    remoteDrawStroke,
     chatMessages,
     broadcastBoardState,
     broadcastCursor,
+    broadcastDrawStroke,
+    broadcastClearCanvas,
     sendChatMessage,
   };
 }
