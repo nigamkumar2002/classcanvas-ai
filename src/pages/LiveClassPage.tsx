@@ -598,10 +598,10 @@ const LiveClassPage = () => {
                     cursor: !isTeacher ? 'default' : tool === 'pointer' ? 'default' : tool === 'eraser' ? 'cell' : 'crosshair',
                     pointerEvents: !isTeacher ? 'none' : 'auto',
                   }}
-                  onMouseDown={startDraw}
-                  onMouseMove={draw}
-                  onMouseUp={stopDraw}
-                  onMouseLeave={() => { stopDraw(); handleMouseLeave(); }}
+                  onPointerDown={startDraw}
+                  onPointerMove={draw}
+                  onPointerUp={stopDraw}
+                  onPointerLeave={() => { stopDraw(); handlePointerLeave(); }}
                 />
                 {/* Teacher cursor overlay (for students) */}
                 {!isTeacher && remoteCursor?.visible && (
