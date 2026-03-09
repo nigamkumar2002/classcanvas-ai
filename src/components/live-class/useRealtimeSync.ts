@@ -37,6 +37,8 @@ export interface ChatMessage {
 
 export function useRealtimeSync(sessionId: string | null, isTeacher: boolean) {
   const channelRef = useRef<RealtimeChannel | null>(null);
+  const lastBoardStateRef = useRef<BoardState | null>(null);
+
   const [remoteBoardState, setRemoteBoardState] = useState<BoardState | null>(null);
   const [remoteCursor, setRemoteCursor] = useState<CursorState | null>(null);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
@@ -53,6 +55,15 @@ export function useRealtimeSync(sessionId: string | null, isTeacher: boolean) {
       .on('broadcast', { event: 'board-state' }, ({ payload }) => {
         if (!isTeacher) setRemoteBoardState(payload as BoardState);
       })
+      .on('broadcast', { event: 'board-state-request' }, () => {
+        if (isTeacher && lastBoardStateRef.current) {
+          channel.send({
+            type: 'broadcast',
+            event: 'board-state',
+            payload: lastBoardStateRef.current,
+          });
+        }
+      })
       .on('broadcast', { event: 'cursor-move' }, ({ payload }) => {
         if (!isTeacher) setRemoteCursor(payload as CursorState);
       })
@@ -60,7 +71,7 @@ export function useRealtimeSync(sessionId: string | null, isTeacher: boolean) {
         if (!isTeacher) setRemoteDrawStroke(payload as SerializedAnnotation);
       })
       .on('broadcast', { event: 'clear-canvas' }, () => {
-        if (!isTeacher) setRemoteBoardState(prev => prev ? { ...prev, annotations: [] } : null);
+        if (!isTeacher) setRemoteBoardState(prev => (prev ? { ...prev, annotations: [] } : null));
       })
       .on('broadcast', { event: 'chat-message' }, ({ payload }) => {
         setChatMessages(prev => [...prev, payload as ChatMessage]);
@@ -68,18 +79,24 @@ export function useRealtimeSync(sessionId: string | null, isTeacher: boolean) {
       .subscribe();
 
     channelRef.current = channel;
-    return () => { supabase.removeChannel(channel); };
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [sessionId, isTeacher]);
 
   const broadcastBoardState = useCallback((state: BoardState) => {
+    lastBoardStateRef.current = state;
     channelRef.current?.send({ type: 'broadcast', event: 'board-state', payload: state });
+  }, []);
+
+  const requestBoardState = useCallback(() => {
+    channelRef.current?.send({ type: 'broadcast', event: 'board-state-request', payload: {} });
   }, []);
 
   const broadcastCursor = useCallback((cursor: CursorState) => {
     channelRef.current?.send({ type: 'broadcast', event: 'cursor-move', payload: cursor });
   }, []);
 
-  // Broadcast a single stroke (incremental, during drawing)
   const broadcastDrawStroke = useCallback((stroke: SerializedAnnotation) => {
     channelRef.current?.send({ type: 'broadcast', event: 'draw-stroke', payload: stroke });
   }, []);
@@ -99,6 +116,7 @@ export function useRealtimeSync(sessionId: string | null, isTeacher: boolean) {
     remoteDrawStroke,
     chatMessages,
     broadcastBoardState,
+    requestBoardState,
     broadcastCursor,
     broadcastDrawStroke,
     broadcastClearCanvas,
