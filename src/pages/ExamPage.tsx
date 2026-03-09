@@ -123,7 +123,7 @@ const ExamPage = () => {
         finalScore = result?.score ?? 0;
 
         if (Array.isArray(result?.reviewed_questions)) {
-          setQuestions(result.reviewed_questions as QuestionData[]);
+          setQuestions(result.reviewed_questions as unknown as QuestionData[]);
         }
       } else {
         questions.forEach(q => {
