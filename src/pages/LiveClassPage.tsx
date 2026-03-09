@@ -159,7 +159,7 @@ const LiveClassPage = () => {
       };
     }
     return () => { supabase.removeChannel(channel); };
-
+  }, [activeSession?.id, isStudent, user?.user_id]);
 
   // Ask teacher for immediate board snapshot when a student joins/enters
   useEffect(() => {
