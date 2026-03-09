@@ -159,7 +159,17 @@ const LiveClassPage = () => {
       };
     }
     return () => { supabase.removeChannel(channel); };
-  }, [activeSession?.id, isStudent, user?.user_id]);
+
+
+  // Ask teacher for immediate board snapshot when a student joins/enters
+  useEffect(() => {
+    if (isTeacher || !activeSession || joinStatus !== 'approved') return;
+    requestBoardState();
+
+    if (remoteBoardState) return;
+    const retry = setInterval(() => requestBoardState(), 1500);
+    return () => clearInterval(retry);
+  }, [isTeacher, activeSession?.id, joinStatus, remoteBoardState, requestBoardState]);
 
   // --- SESSION MANAGEMENT ---
   const startClass = async () => {
