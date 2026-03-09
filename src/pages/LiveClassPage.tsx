@@ -587,7 +587,7 @@ const LiveClassPage = () => {
           )}
 
           {/* PDF Canvas Area */}
-          <div ref={boardContainerRef} className="flex-1 overflow-auto flex items-center justify-center bg-slate-950 relative">
+          <div ref={boardContainerRef} className="flex-1 overflow-auto flex items-start justify-center bg-slate-950 relative p-3 md:p-6">
             {hasPDF ? (
               <div className="relative inline-block">
                 <canvas ref={pdfCanvasRef} className="max-w-full shadow-2xl shadow-black/50" style={{ display: 'block' }} />
