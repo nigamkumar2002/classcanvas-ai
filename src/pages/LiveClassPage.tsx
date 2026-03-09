@@ -312,7 +312,7 @@ const LiveClassPage = () => {
       const zoomVal = remoteBoardState.zoom;
       const page = await studentPdfDoc.getPage(pageNum);
       const scale = (zoomVal / 100) * 1.5;
-      const viewport = page.getViewport({ scale });
+      const viewport = page.getViewport({ scale, rotation: 0 });
       const canvas = pdfCanvasRef.current!;
       canvas.width = viewport.width; canvas.height = viewport.height;
       await page.render({ canvasContext: canvas.getContext('2d')!, viewport }).promise;
