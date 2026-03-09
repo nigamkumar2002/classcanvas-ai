@@ -387,60 +387,74 @@ const LiveClassPage = () => {
   useEffect(() => { broadcastCurrentState(); }, [annotations, currentPage, zoom, selectedMaterial, broadcastCurrentState]);
 
   // --- CURSOR TRACKING ---
-  const handleMouseMove = useCallback((e: React.MouseEvent) => {
+  const lastCursorBroadcastRef = useRef(0);
+
+  const handlePointerMove = useCallback((e: React.PointerEvent) => {
     if (!isTeacher || !annotCanvasRef.current) return;
+
+    const now = performance.now();
+    if (now - lastCursorBroadcastRef.current < 16) return;
+    lastCursorBroadcastRef.current = now;
+
     const rect = annotCanvasRef.current.getBoundingClientRect();
     const x = (e.clientX - rect.left) / rect.width;
     const y = (e.clientY - rect.top) / rect.height;
     broadcastCursor({ x, y, visible: true });
   }, [isTeacher, broadcastCursor]);
 
-  const handleMouseLeave = useCallback(() => {
+  const handlePointerLeave = useCallback(() => {
     if (isTeacher) broadcastCursor({ x: 0, y: 0, visible: false });
   }, [isTeacher, broadcastCursor]);
 
   // --- DRAWING (Teacher only) ---
-  const getPos = (e: React.MouseEvent, canvas: HTMLCanvasElement) => {
+  const getPos = (e: React.PointerEvent, canvas: HTMLCanvasElement) => {
     const rect = canvas.getBoundingClientRect();
     return { x: (e.clientX - rect.left) * (canvas.width / rect.width), y: (e.clientY - rect.top) * (canvas.height / rect.height) };
   };
 
-  const startDraw = (e: React.MouseEvent) => {
+  const startDraw = (e: React.PointerEvent) => {
     if (tool === 'pointer' || !isTeacher || !annotCanvasRef.current) return;
+    e.preventDefault();
     const pos = getPos(e, annotCanvasRef.current);
     const ann: Annotation = { id: crypto.randomUUID(), tool: tool as Annotation['tool'], points: [pos], color, width: lineWidth };
     setCurrentAnnotation(ann);
     setIsDrawing(true);
   };
 
-  const draw = (e: React.MouseEvent) => {
-    handleMouseMove(e);
+  const draw = (e: React.PointerEvent) => {
+    handlePointerMove(e);
     if (!isDrawing || !currentAnnotation || !annotCanvasRef.current) return;
+
     const pos = getPos(e, annotCanvasRef.current);
     const updated = { ...currentAnnotation, points: [...currentAnnotation.points, pos] };
     setCurrentAnnotation(updated);
-    // Live-broadcast the in-progress stroke to students
-    broadcastDrawStroke(updated);
-    // Draw locally
-    const ctx = annotCanvasRef.current.getContext('2d')!;
+
     const pts = updated.points;
     if (pts.length >= 2) {
+      // Send only the latest segment to keep realtime latency low
+      broadcastDrawStroke({ ...updated, points: pts.slice(-2) });
+
+      const ctx = annotCanvasRef.current.getContext('2d')!;
       ctx.beginPath();
       if (updated.tool === 'highlighter') { ctx.globalAlpha = 0.35; ctx.lineWidth = updated.width * 6; }
       else if (updated.tool === 'eraser') { ctx.globalCompositeOperation = 'destination-out'; ctx.lineWidth = updated.width * 5; }
       else { ctx.globalAlpha = 1; ctx.lineWidth = updated.width; }
       ctx.strokeStyle = updated.tool === 'eraser' ? '#000' : updated.color;
-      ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
       ctx.moveTo(pts[pts.length - 2].x, pts[pts.length - 2].y);
       ctx.lineTo(pts[pts.length - 1].x, pts[pts.length - 1].y);
-      ctx.stroke(); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+      ctx.globalCompositeOperation = 'source-over';
     }
   };
 
   const stopDraw = () => {
     if (!isDrawing || !currentAnnotation) return;
     setAnnotations(prev => [...prev, currentAnnotation]);
-    setCurrentAnnotation(null); setIsDrawing(false);
+    setCurrentAnnotation(null);
+    setIsDrawing(false);
   };
 
   const clearCanvas = () => {
