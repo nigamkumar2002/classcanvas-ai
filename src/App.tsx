@@ -32,8 +32,8 @@ const AppRoutes = () => {
     );
   }
 
-  const wrap = (Page: React.ComponentType) => (
-    <ProtectedRoute>
+  const wrap = (Page: React.ComponentType, allowedRoles?: string[]) => (
+    <ProtectedRoute allowedRoles={allowedRoles}>
       <AppLayout><Page /></AppLayout>
     </ProtectedRoute>
   );
@@ -49,11 +49,12 @@ const AppRoutes = () => {
       <Route path="/live-class" element={wrap(LiveClassPage)} />
       <Route path="/exams" element={wrap(ExamPage)} />
       <Route path="/results" element={wrap(ExamPage)} />
-      <Route path="/users" element={wrap(UsersPage)} />
-      <Route path="/teachers" element={wrap(UsersPage)} />
-      <Route path="/students" element={wrap(UsersPage)} />
-      <Route path="/schools" element={wrap(SchoolsPage)} />
-      <Route path="/analytics" element={wrap(AnalyticsPage)} />
+
+      <Route path="/users" element={wrap(UsersPage, ['developer', 'super_admin', 'admin', 'teacher'])} />
+      <Route path="/teachers" element={wrap(UsersPage, ['developer', 'super_admin', 'admin'])} />
+      <Route path="/students" element={wrap(UsersPage, ['developer', 'super_admin', 'admin', 'teacher'])} />
+      <Route path="/schools" element={wrap(SchoolsPage, ['developer'])} />
+      <Route path="/analytics" element={wrap(AnalyticsPage, ['developer', 'super_admin', 'admin'])} />
       <Route path="/settings" element={wrap(SettingsPage)} />
       <Route path="/calendar" element={wrap(CalendarPage)} />
       <Route path="/announcements" element={wrap(AnnouncementsPage)} />

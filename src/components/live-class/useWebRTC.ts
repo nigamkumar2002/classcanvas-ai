@@ -161,6 +161,15 @@ export function useWebRTC(sessionId: string | null, userId: string, userName: st
       setVideoEnabled(withVideo);
       setMediaStarted(true);
 
+      // Attach tracks to existing peers immediately (prevents delayed audio/video)
+      peersRef.current.forEach(pc => {
+        stream.getTracks().forEach(track => {
+          const sender = pc.getSenders().find(s => s.track?.kind === track.kind);
+          if (sender) sender.replaceTrack(track);
+          else pc.addTrack(track, stream);
+        });
+      });
+
       // Announce to others
       channelRef.current?.send({
         type: 'broadcast', event: 'rtc-join',

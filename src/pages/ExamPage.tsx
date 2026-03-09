@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
@@ -16,7 +16,7 @@ export interface ExamData {
 export interface QuestionData {
   id: string; exam_id: string; question_text: string;
   option_a: string; option_b: string; option_c: string; option_d: string;
-  correct_answer: string; marks: number; order_index: number;
+  correct_answer?: string; marks: number; order_index: number;
 }
 
 const ExamPage = () => {
@@ -38,14 +38,11 @@ const ExamPage = () => {
   const fetchExams = useCallback(async () => {
     try {
       let query = supabase.from('exams').select('*').order('created_at', { ascending: false });
-      
-      // Students only see exams for their class (via chapter → subject → class chain)
+
       if (user?.role === 'student' && user?.class_id) {
-        // Get subjects for student's class
         const { data: subjects } = await supabase.from('subjects').select('id').eq('class_id', user.class_id);
         if (subjects && subjects.length > 0) {
           const subjectIds = subjects.map(s => s.id);
-          // Get chapters for those subjects
           const { data: chapters } = await supabase.from('chapters').select('id').in('subject_id', subjectIds);
           if (chapters && chapters.length > 0) {
             const chapterIds = chapters.map(c => c.id);
@@ -57,18 +54,46 @@ const ExamPage = () => {
           setExams([]); setLoading(false); return;
         }
       }
-      
+
       const { data } = await query;
       setExams((data as ExamData[]) || []);
-    } catch { /* ignore */ } finally { setLoading(false); }
+    } catch {
+      // ignore
+    } finally {
+      setLoading(false);
+    }
   }, [user]);
 
   useEffect(() => { fetchExams(); }, [fetchExams]);
 
   const startExam = async (exam: ExamData) => {
-    const { data: qs } = await supabase.from('questions').select('*').eq('exam_id', exam.id).order('order_index');
-    if (!qs || qs.length === 0) { toast.error('No questions found for this exam'); return; }
-    setQuestions(qs as QuestionData[]);
+    const isStudent = user?.role === 'student';
+
+    if (isStudent) {
+      const { data: studentQuestions, error } = await supabase.rpc('get_exam_questions_for_student', {
+        _exam_id: exam.id,
+      });
+
+      if (error) {
+        toast.error('Unable to load exam questions securely');
+        return;
+      }
+
+      if (!studentQuestions || studentQuestions.length === 0) {
+        toast.error('No questions found for this exam');
+        return;
+      }
+
+      setQuestions(studentQuestions as QuestionData[]);
+    } else {
+      const { data: qs } = await supabase.from('questions').select('*').eq('exam_id', exam.id).order('order_index');
+      if (!qs || qs.length === 0) {
+        toast.error('No questions found for this exam');
+        return;
+      }
+      setQuestions(qs as QuestionData[]);
+    }
+
     setActiveExam(exam);
     setAnswers({});
     setFlagged(new Set());
@@ -79,25 +104,51 @@ const ExamPage = () => {
 
   const handleSubmit = useCallback(async () => {
     if (!activeExam || submitted) return;
-    let s = 0;
-    questions.forEach(q => { if (answers[q.id] === q.correct_answer) s += q.marks; });
-    setScore(s);
-    setSubmitted(true);
 
-    // Save result
-    if (user) {
-      await supabase.from('exam_results').insert({
-        exam_id: activeExam.id,
-        student_id: user.user_id,
-        score: s,
-        total_marks: activeExam.total_marks,
-        answers: answers as any,
-        school_id: user.school_id || null,
-      });
+    try {
+      let finalScore = 0;
+
+      if (user?.role === 'student') {
+        const { data, error } = await supabase.rpc('grade_exam_submission', {
+          _exam_id: activeExam.id,
+          _answers: answers,
+        });
+
+        if (error) {
+          toast.error('Could not grade exam securely');
+          return;
+        }
+
+        const result = Array.isArray(data) ? data[0] : data;
+        finalScore = result?.score ?? 0;
+
+        if (Array.isArray(result?.reviewed_questions)) {
+          setQuestions(result.reviewed_questions as unknown as QuestionData[]);
+        }
+      } else {
+        questions.forEach(q => {
+          if (answers[q.id] === q.correct_answer) finalScore += q.marks;
+        });
+      }
+
+      setScore(finalScore);
+      setSubmitted(true);
+
+      if (user) {
+        await supabase.from('exam_results').insert({
+          exam_id: activeExam.id,
+          student_id: user.user_id,
+          score: finalScore,
+          total_marks: activeExam.total_marks,
+          answers: answers as any,
+          school_id: user.school_id || null,
+        });
+      }
+    } catch {
+      toast.error('Failed to submit exam. Please try again.');
     }
   }, [activeExam, answers, questions, submitted, user]);
 
-  // Timer
   useEffect(() => {
     if (!activeExam || submitted) return;
     const timer = setInterval(() => {
