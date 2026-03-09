@@ -597,6 +597,7 @@ const LiveClassPage = () => {
                   style={{
                     cursor: !isTeacher ? 'default' : tool === 'pointer' ? 'default' : tool === 'eraser' ? 'cell' : 'crosshair',
                     pointerEvents: !isTeacher ? 'none' : 'auto',
+                    touchAction: 'none',
                   }}
                   onPointerDown={startDraw}
                   onPointerMove={draw}
