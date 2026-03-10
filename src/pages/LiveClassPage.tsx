@@ -2,7 +2,9 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   PlayCircle, StopCircle, Users, ChevronLeft, ChevronRight, Pen, Eraser, MousePointer, Trash2,
   Maximize2, Minimize2, ZoomIn, ZoomOut, Highlighter, MessageSquare, FileText, Copy, Check,
-  Clock, Link as LinkIcon, ExternalLink, Video as VideoIcon, Radio
+  Clock, Link as LinkIcon, ExternalLink, Video as VideoIcon, Radio,
+  Circle, Square, Minus, ArrowRight, Type, Undo2, Redo2, Move, Crosshair,
+  Palette, SlidersHorizontal
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
@@ -17,8 +19,9 @@ import ParticipantsPanel from '@/components/live-class/ParticipantsPanel';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
 
-type Tool = 'pointer' | 'pen' | 'eraser' | 'highlighter';
-const COLORS = ['#EF4444', '#F59E0B', '#10B981', '#3B82F6', '#8B5CF6', '#EC4899', '#FFFFFF'];
+type Tool = 'pointer' | 'pen' | 'eraser' | 'highlighter' | 'line' | 'arrow' | 'rectangle' | 'circle' | 'text' | 'laser';
+const COLORS = ['#EF4444', '#F59E0B', '#10B981', '#3B82F6', '#8B5CF6', '#EC4899', '#FFFFFF', '#000000'];
+const WIDTHS = [1, 2, 3, 5, 8, 12];
 
 interface Annotation extends SerializedAnnotation {}
 interface MaterialItem { id: string; title: string; file_url?: string; file_type?: string; type: string; }
@@ -44,6 +47,20 @@ const LiveClassPage = () => {
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
   const [isDrawing, setIsDrawing] = useState(false);
   const [currentAnnotation, setCurrentAnnotation] = useState<Annotation | null>(null);
+  const [showColorPicker, setShowColorPicker] = useState(false);
+  const [showWidthPicker, setShowWidthPicker] = useState(false);
+
+  // Undo/Redo
+  const [undoStack, setUndoStack] = useState<Annotation[][]>([]);
+  const [redoStack, setRedoStack] = useState<Annotation[][]>([]);
+
+  // Text tool
+  const [textInput, setTextInput] = useState('');
+  const [textPos, setTextPos] = useState<{x: number; y: number} | null>(null);
+
+  // Laser pointer
+  const [laserPos, setLaserPos] = useState<{x: number; y: number} | null>(null);
+  const laserTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // PDF state
   const [zoom, setZoom] = useState(100);
@@ -73,6 +90,10 @@ const LiveClassPage = () => {
   // Student PDF state
   const [studentPdfDoc, setStudentPdfDoc] = useState<any>(null);
   const [studentMaterialUrl, setStudentMaterialUrl] = useState<string | null>(null);
+  // Track what the student last rendered to avoid unnecessary PDF re-renders
+  const studentLastRenderRef = useRef<{ url: string | null; page: number; zoom: number }>({ url: null, page: 0, zoom: 0 });
+  // Store student annotations separately to avoid race conditions
+  const studentAnnotationsRef = useRef<Annotation[]>([]);
 
   const isTeacher = user?.role === 'teacher' || user?.role === 'admin' || user?.role === 'super_admin' || user?.role === 'developer';
   const isStudent = user?.role === 'student';
@@ -161,11 +182,10 @@ const LiveClassPage = () => {
     return () => { supabase.removeChannel(channel); };
   }, [activeSession?.id, isStudent, user?.user_id]);
 
-  // Ask teacher for immediate board snapshot when a student joins/enters
+  // Ask teacher for immediate board snapshot when a student joins
   useEffect(() => {
     if (isTeacher || !activeSession || joinStatus !== 'approved') return;
     requestBoardState();
-
     if (remoteBoardState) return;
     const retry = setInterval(() => requestBoardState(), 1500);
     return () => clearInterval(retry);
@@ -216,7 +236,7 @@ const LiveClassPage = () => {
     await supabase.from('live_session_participants').delete().eq('session_id', activeSession.id);
     setActiveSession(null); setSmartBoardOpen(false); setPdfDoc(null);
     setSelectedMaterial(null); setParticipants([]); setJoinCode('');
-    setAnnotations([]);
+    setAnnotations([]); setUndoStack([]); setRedoStack([]);
     toast.success('Live class ended');
   };
 
@@ -270,11 +290,12 @@ const LiveClassPage = () => {
     const isPDF = selectedMaterial.file_type?.includes('pdf') || selectedMaterial.file_url?.endsWith('.pdf');
     if (!isPDF) return;
     pdfjsLib.getDocument({ url: selectedMaterial.file_url }).promise.then(doc => {
-      setPdfDoc(doc); setTotalPages(doc.numPages); setCurrentPage(1); setAnnotations([]);
+      setPdfDoc(doc); setTotalPages(doc.numPages); setCurrentPage(1);
+      setAnnotations([]); setUndoStack([]); setRedoStack([]);
     }).catch(err => console.error('PDF load error:', err));
   }, [selectedMaterial, isTeacher]);
 
-  // --- PDF LOADING (Student) ---
+  // --- PDF LOADING (Student) - only load doc when URL changes ---
   useEffect(() => {
     if (isTeacher || !remoteBoardState?.materialUrl) return;
     if (remoteBoardState.materialUrl === studentMaterialUrl) return;
@@ -304,67 +325,110 @@ const LiveClassPage = () => {
     render();
   }, [pdfDoc, currentPage, zoom, isTeacher]);
 
-  // --- PDF RENDERING (Student - synced) ---
+  // *** FIX: Student PDF rendering - ONLY re-render PDF when page/zoom/material change ***
+  // This is the key fix: decouple PDF rendering from annotation updates
   useEffect(() => {
     if (isTeacher || !studentPdfDoc || !pdfCanvasRef.current || !remoteBoardState) return;
-    const render = async () => {
-      const pageNum = remoteBoardState.currentPage;
-      const zoomVal = remoteBoardState.zoom;
-      const page = await studentPdfDoc.getPage(pageNum);
-      const scale = (zoomVal / 100) * 1.5;
-      const viewport = page.getViewport({ scale, rotation: 0 });
-      const canvas = pdfCanvasRef.current!;
-      canvas.width = viewport.width; canvas.height = viewport.height;
-      await page.render({ canvasContext: canvas.getContext('2d')!, viewport }).promise;
+    const pageNum = remoteBoardState.currentPage;
+    const zoomVal = remoteBoardState.zoom;
+    const matUrl = remoteBoardState.materialUrl;
+
+    // Check if we actually need to re-render the PDF (page/zoom/material changed)
+    const last = studentLastRenderRef.current;
+    if (last.url === matUrl && last.page === pageNum && last.zoom === zoomVal) {
+      // Only annotations changed - just redraw annotation canvas without touching PDF
       if (annotCanvasRef.current) {
-        annotCanvasRef.current.width = viewport.width;
-        annotCanvasRef.current.height = viewport.height;
         drawAnnotations(remoteBoardState.annotations);
+        studentAnnotationsRef.current = remoteBoardState.annotations;
       }
-      setCurrentPage(pageNum);
-      setZoom(zoomVal);
+      return;
+    }
+
+    // PDF page/zoom/material changed - full re-render
+    const render = async () => {
+      try {
+        const page = await studentPdfDoc.getPage(pageNum);
+        const scale = (zoomVal / 100) * 1.5;
+        const viewport = page.getViewport({ scale, rotation: 0 });
+        const canvas = pdfCanvasRef.current!;
+        canvas.width = viewport.width; canvas.height = viewport.height;
+        await page.render({ canvasContext: canvas.getContext('2d')!, viewport }).promise;
+        if (annotCanvasRef.current) {
+          annotCanvasRef.current.width = viewport.width;
+          annotCanvasRef.current.height = viewport.height;
+          drawAnnotations(remoteBoardState.annotations);
+          studentAnnotationsRef.current = remoteBoardState.annotations;
+        }
+        studentLastRenderRef.current = { url: matUrl, page: pageNum, zoom: zoomVal };
+        setCurrentPage(pageNum);
+        setZoom(zoomVal);
+      } catch (err) {
+        console.error('Student render error:', err);
+      }
     };
     render();
-  }, [studentPdfDoc, remoteBoardState, isTeacher]);
+  }, [studentPdfDoc, remoteBoardState?.currentPage, remoteBoardState?.zoom, remoteBoardState?.materialUrl, remoteBoardState?.annotations, isTeacher]);
 
-  // --- Student: render live drawing strokes from teacher ---
+  // *** FIX: Student incremental stroke rendering - no conflict with full redraws ***
   useEffect(() => {
     if (isTeacher || !remoteDrawStroke || !annotCanvasRef.current) return;
     const canvas = annotCanvasRef.current;
     const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+    if (!ctx || canvas.width === 0) return;
     const ann = remoteDrawStroke;
     if (ann.points.length < 2) return;
+
+    ctx.save();
     ctx.beginPath();
-    if (ann.tool === 'eraser') { ctx.globalCompositeOperation = 'destination-out'; ctx.lineWidth = ann.width * 5; }
-    else if (ann.tool === 'highlighter') { ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 0.35; ctx.lineWidth = ann.width * 6; }
-    else { ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1; ctx.lineWidth = ann.width; }
+    if (ann.tool === 'eraser') {
+      ctx.globalCompositeOperation = 'destination-out';
+      ctx.lineWidth = ann.width * 5;
+    } else if (ann.tool === 'highlighter') {
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.globalAlpha = 0.35;
+      ctx.lineWidth = ann.width * 6;
+    } else {
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.globalAlpha = 1;
+      ctx.lineWidth = ann.width;
+    }
     ctx.strokeStyle = ann.tool === 'eraser' ? '#000' : ann.color;
     ctx.lineCap = 'round'; ctx.lineJoin = 'round';
     ctx.moveTo(ann.points[0].x, ann.points[0].y);
     ann.points.slice(1).forEach(p => ctx.lineTo(p.x, p.y));
     ctx.stroke();
-    ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+    ctx.restore();
   }, [remoteDrawStroke, isTeacher]);
 
-  // --- DRAW ANNOTATIONS ---
+  // --- DRAW ANNOTATIONS (used for full redraw) ---
   const drawAnnotations = useCallback((anns: Annotation[]) => {
     const canvas = annotCanvasRef.current;
-    if (!canvas) return;
+    if (!canvas || canvas.width === 0) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     anns.forEach(ann => {
       if (ann.points.length < 2) return;
+      ctx.save();
       ctx.beginPath();
-      if (ann.tool === 'eraser') { ctx.globalCompositeOperation = 'destination-out'; ctx.lineWidth = ann.width * 5; }
-      else if (ann.tool === 'highlighter') { ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 0.35; ctx.lineWidth = ann.width * 6; }
-      else { ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1; ctx.lineWidth = ann.width; }
+      if (ann.tool === 'eraser') {
+        ctx.globalCompositeOperation = 'destination-out';
+        ctx.lineWidth = ann.width * 5;
+      } else if (ann.tool === 'highlighter') {
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.globalAlpha = 0.35;
+        ctx.lineWidth = ann.width * 6;
+      } else {
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.globalAlpha = 1;
+        ctx.lineWidth = ann.width;
+      }
       ctx.strokeStyle = ann.tool === 'eraser' ? '#000' : ann.color;
       ctx.lineCap = 'round'; ctx.lineJoin = 'round';
       ctx.moveTo(ann.points[0].x, ann.points[0].y);
       ann.points.slice(1).forEach(p => ctx.lineTo(p.x, p.y));
-      ctx.stroke(); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+      ctx.stroke();
+      ctx.restore();
     });
   }, []);
 
@@ -372,38 +436,47 @@ const LiveClassPage = () => {
     if (isTeacher) drawAnnotations(annotations);
   }, [annotations, drawAnnotations, isTeacher]);
 
-  // --- BROADCAST BOARD STATE (Teacher) ---
+  // --- BROADCAST BOARD STATE (Teacher) - debounced to reduce noise ---
+  const broadcastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const broadcastCurrentState = useCallback(() => {
     if (!isTeacher || !activeSession) return;
-    broadcastBoardState({
-      materialId: selectedMaterial?.id || null,
-      materialUrl: selectedMaterial?.file_url || null,
-      materialFileType: selectedMaterial?.file_type || null,
-      materialTitle: selectedMaterial?.title || null,
-      currentPage, totalPages, zoom, annotations,
-    });
+    if (broadcastTimerRef.current) clearTimeout(broadcastTimerRef.current);
+    broadcastTimerRef.current = setTimeout(() => {
+      broadcastBoardState({
+        materialId: selectedMaterial?.id || null,
+        materialUrl: selectedMaterial?.file_url || null,
+        materialFileType: selectedMaterial?.file_type || null,
+        materialTitle: selectedMaterial?.title || null,
+        currentPage, totalPages, zoom, annotations,
+      });
+    }, 100); // Small debounce to batch rapid changes
   }, [isTeacher, activeSession, selectedMaterial, currentPage, totalPages, zoom, annotations, broadcastBoardState]);
 
   useEffect(() => { broadcastCurrentState(); }, [annotations, currentPage, zoom, selectedMaterial, broadcastCurrentState]);
 
-  // --- CURSOR TRACKING ---
+  // --- CURSOR & LASER TRACKING ---
   const lastCursorBroadcastRef = useRef(0);
 
   const handlePointerMove = useCallback((e: React.PointerEvent) => {
     if (!isTeacher || !annotCanvasRef.current) return;
-
     const now = performance.now();
     if (now - lastCursorBroadcastRef.current < 16) return;
     lastCursorBroadcastRef.current = now;
-
     const rect = annotCanvasRef.current.getBoundingClientRect();
     const x = (e.clientX - rect.left) / rect.width;
     const y = (e.clientY - rect.top) / rect.height;
     broadcastCursor({ x, y, visible: true });
-  }, [isTeacher, broadcastCursor]);
+
+    if (tool === 'laser') {
+      setLaserPos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+      if (laserTimeoutRef.current) clearTimeout(laserTimeoutRef.current);
+      laserTimeoutRef.current = setTimeout(() => setLaserPos(null), 3000);
+    }
+  }, [isTeacher, broadcastCursor, tool]);
 
   const handlePointerLeave = useCallback(() => {
     if (isTeacher) broadcastCursor({ x: 0, y: 0, visible: false });
+    setLaserPos(null);
   }, [isTeacher, broadcastCursor]);
 
   // --- DRAWING (Teacher only) ---
@@ -413,10 +486,21 @@ const LiveClassPage = () => {
   };
 
   const startDraw = (e: React.PointerEvent) => {
-    if (tool === 'pointer' || !isTeacher || !annotCanvasRef.current) return;
+    if (!isTeacher || !annotCanvasRef.current) return;
+
+    if (tool === 'pointer' || tool === 'laser') return;
+
+    // Text tool: place text input
+    if (tool === 'text') {
+      const rect = annotCanvasRef.current.getBoundingClientRect();
+      setTextPos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+      return;
+    }
+
     e.preventDefault();
     const pos = getPos(e, annotCanvasRef.current);
-    const ann: Annotation = { id: crypto.randomUUID(), tool: tool as Annotation['tool'], points: [pos], color, width: lineWidth };
+    const toolType = (['line', 'arrow', 'rectangle', 'circle'].includes(tool) ? tool : tool) as Annotation['tool'];
+    const ann: Annotation = { id: crypto.randomUUID(), tool: toolType, points: [pos], color, width: lineWidth };
     setCurrentAnnotation(ann);
     setIsDrawing(true);
   };
@@ -426,38 +510,181 @@ const LiveClassPage = () => {
     if (!isDrawing || !currentAnnotation || !annotCanvasRef.current) return;
 
     const pos = getPos(e, annotCanvasRef.current);
+
+    // For shape tools, keep only start and end points
+    if (['line', 'arrow', 'rectangle', 'circle'].includes(currentAnnotation.tool)) {
+      const updated = { ...currentAnnotation, points: [currentAnnotation.points[0], pos] };
+      setCurrentAnnotation(updated);
+
+      // Redraw all annotations + current shape preview
+      drawAnnotations(annotations);
+      const ctx = annotCanvasRef.current.getContext('2d')!;
+      drawShape(ctx, updated);
+
+      // Broadcast shape as 2-point annotation
+      broadcastDrawStroke(updated);
+      return;
+    }
+
+    // Freehand tools (pen, highlighter, eraser)
     const updated = { ...currentAnnotation, points: [...currentAnnotation.points, pos] };
     setCurrentAnnotation(updated);
 
     const pts = updated.points;
     if (pts.length >= 2) {
-      // Send only the latest segment to keep realtime latency low
       broadcastDrawStroke({ ...updated, points: pts.slice(-2) });
 
       const ctx = annotCanvasRef.current.getContext('2d')!;
+      ctx.save();
       ctx.beginPath();
       if (updated.tool === 'highlighter') { ctx.globalAlpha = 0.35; ctx.lineWidth = updated.width * 6; }
       else if (updated.tool === 'eraser') { ctx.globalCompositeOperation = 'destination-out'; ctx.lineWidth = updated.width * 5; }
       else { ctx.globalAlpha = 1; ctx.lineWidth = updated.width; }
       ctx.strokeStyle = updated.tool === 'eraser' ? '#000' : updated.color;
-      ctx.lineCap = 'round';
-      ctx.lineJoin = 'round';
+      ctx.lineCap = 'round'; ctx.lineJoin = 'round';
       ctx.moveTo(pts[pts.length - 2].x, pts[pts.length - 2].y);
       ctx.lineTo(pts[pts.length - 1].x, pts[pts.length - 1].y);
       ctx.stroke();
-      ctx.globalAlpha = 1;
-      ctx.globalCompositeOperation = 'source-over';
+      ctx.restore();
     }
   };
 
+  const drawShape = (ctx: CanvasRenderingContext2D, ann: Annotation) => {
+    if (ann.points.length < 2) return;
+    const [start, end] = [ann.points[0], ann.points[ann.points.length - 1]];
+    ctx.save();
+    ctx.strokeStyle = ann.color;
+    ctx.lineWidth = ann.width;
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    ctx.beginPath();
+    if (ann.tool === 'line') {
+      ctx.moveTo(start.x, start.y);
+      ctx.lineTo(end.x, end.y);
+    } else if (ann.tool === 'arrow') {
+      ctx.moveTo(start.x, start.y);
+      ctx.lineTo(end.x, end.y);
+      // Arrowhead
+      const angle = Math.atan2(end.y - start.y, end.x - start.x);
+      const headLen = 15;
+      ctx.lineTo(end.x - headLen * Math.cos(angle - Math.PI / 6), end.y - headLen * Math.sin(angle - Math.PI / 6));
+      ctx.moveTo(end.x, end.y);
+      ctx.lineTo(end.x - headLen * Math.cos(angle + Math.PI / 6), end.y - headLen * Math.sin(angle + Math.PI / 6));
+    } else if (ann.tool === 'rectangle') {
+      ctx.rect(start.x, start.y, end.x - start.x, end.y - start.y);
+    } else if (ann.tool === 'circle') {
+      const rx = Math.abs(end.x - start.x) / 2;
+      const ry = Math.abs(end.y - start.y) / 2;
+      const cx = (start.x + end.x) / 2;
+      const cy = (start.y + end.y) / 2;
+      ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+    }
+    ctx.stroke();
+    ctx.restore();
+  };
+
+  // Override drawAnnotations to handle shapes
+  const drawAnnotationsWithShapes = useCallback((anns: Annotation[]) => {
+    const canvas = annotCanvasRef.current;
+    if (!canvas || canvas.width === 0) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    anns.forEach(ann => {
+      if (ann.points.length < 2) return;
+      if (['line', 'arrow', 'rectangle', 'circle'].includes(ann.tool)) {
+        drawShape(ctx, ann);
+        return;
+      }
+      ctx.save();
+      ctx.beginPath();
+      if (ann.tool === 'eraser') {
+        ctx.globalCompositeOperation = 'destination-out';
+        ctx.lineWidth = ann.width * 5;
+      } else if (ann.tool === 'highlighter') {
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.globalAlpha = 0.35;
+        ctx.lineWidth = ann.width * 6;
+      } else {
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.globalAlpha = 1;
+        ctx.lineWidth = ann.width;
+      }
+      ctx.strokeStyle = ann.tool === 'eraser' ? '#000' : ann.color;
+      ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+      ctx.moveTo(ann.points[0].x, ann.points[0].y);
+      ann.points.slice(1).forEach(p => ctx.lineTo(p.x, p.y));
+      ctx.stroke();
+      ctx.restore();
+    });
+  }, []);
+
+  // Replace the original drawAnnotations with shape-aware version
+  useEffect(() => {
+    if (isTeacher) drawAnnotationsWithShapes(annotations);
+  }, [annotations, drawAnnotationsWithShapes, isTeacher]);
+
   const stopDraw = () => {
     if (!isDrawing || !currentAnnotation) return;
+    // Push undo state
+    setUndoStack(prev => [...prev, annotations]);
+    setRedoStack([]);
     setAnnotations(prev => [...prev, currentAnnotation]);
     setCurrentAnnotation(null);
     setIsDrawing(false);
   };
 
+  const addTextAnnotation = () => {
+    if (!textInput.trim() || !textPos || !annotCanvasRef.current) return;
+    const canvas = annotCanvasRef.current;
+    const scaleX = canvas.width / canvas.getBoundingClientRect().width;
+    const scaleY = canvas.height / canvas.getBoundingClientRect().height;
+    const x = textPos.x * scaleX;
+    const y = textPos.y * scaleY;
+
+    // Draw text directly on canvas
+    const ctx = canvas.getContext('2d')!;
+    ctx.save();
+    ctx.font = `${lineWidth * 6 + 12}px sans-serif`;
+    ctx.fillStyle = color;
+    ctx.fillText(textInput, x, y);
+    ctx.restore();
+
+    // Create annotation for sync - use pen tool type with special encoding
+    const textAnn: Annotation = {
+      id: crypto.randomUUID(),
+      tool: 'pen',
+      points: [{ x, y }, { x: x + 1, y: y + 1 }], // minimal points
+      color,
+      width: lineWidth,
+    };
+    setUndoStack(prev => [...prev, annotations]);
+    setRedoStack([]);
+    setAnnotations(prev => [...prev, textAnn]);
+    broadcastDrawStroke(textAnn);
+
+    setTextInput('');
+    setTextPos(null);
+  };
+
+  const undo = () => {
+    if (undoStack.length === 0) return;
+    const prevState = undoStack[undoStack.length - 1];
+    setRedoStack(prev => [...prev, annotations]);
+    setUndoStack(prev => prev.slice(0, -1));
+    setAnnotations(prevState);
+  };
+
+  const redo = () => {
+    if (redoStack.length === 0) return;
+    const nextState = redoStack[redoStack.length - 1];
+    setUndoStack(prev => [...prev, annotations]);
+    setRedoStack(prev => prev.slice(0, -1));
+    setAnnotations(nextState);
+  };
+
   const clearCanvas = () => {
+    setUndoStack(prev => [...prev, annotations]);
+    setRedoStack([]);
     setAnnotations([]);
     broadcastClearCanvas();
     if (annotCanvasRef.current) {
@@ -465,7 +692,12 @@ const LiveClassPage = () => {
     }
   };
 
-  const changePage = (p: number) => { setCurrentPage(p); setAnnotations([]); };
+  const changePage = (p: number) => {
+    setCurrentPage(p);
+    setAnnotations([]);
+    setUndoStack([]);
+    setRedoStack([]);
+  };
 
   // --- RENDER ---
   if (loading) return (
@@ -481,13 +713,58 @@ const LiveClassPage = () => {
   const pendingCount = participants.filter(p => p.status === 'pending').length;
   const approvedCount = participants.filter(p => p.status === 'approved').length;
 
+  // Tool definitions for toolbar
+  const toolGroups = [
+    {
+      label: 'Select',
+      tools: [
+        { t: 'pointer' as Tool, icon: MousePointer, label: 'Pointer' },
+        { t: 'laser' as Tool, icon: Crosshair, label: 'Laser Pointer' },
+      ]
+    },
+    {
+      label: 'Draw',
+      tools: [
+        { t: 'pen' as Tool, icon: Pen, label: 'Pen' },
+        { t: 'highlighter' as Tool, icon: Highlighter, label: 'Highlighter' },
+        { t: 'eraser' as Tool, icon: Eraser, label: 'Eraser' },
+      ]
+    },
+    {
+      label: 'Shapes',
+      tools: [
+        { t: 'line' as Tool, icon: Minus, label: 'Line' },
+        { t: 'arrow' as Tool, icon: ArrowRight, label: 'Arrow' },
+        { t: 'rectangle' as Tool, icon: Square, label: 'Rectangle' },
+        { t: 'circle' as Tool, icon: Circle, label: 'Circle' },
+      ]
+    },
+    {
+      label: 'Other',
+      tools: [
+        { t: 'text' as Tool, icon: Type, label: 'Text' },
+      ]
+    }
+  ];
+
+  const getCursorStyle = () => {
+    if (!isTeacher) return 'default';
+    switch (tool) {
+      case 'pointer': return 'default';
+      case 'laser': return 'crosshair';
+      case 'pen': case 'highlighter': case 'line': case 'arrow': case 'rectangle': case 'circle': return 'crosshair';
+      case 'eraser': return 'cell';
+      case 'text': return 'text';
+      default: return 'default';
+    }
+  };
+
   // === SMART BOARD VIEW ===
   if (smartBoardOpen && activeSession && (isTeacher || joinStatus === 'approved')) {
     return (
       <div className={cn('fixed z-50 bg-slate-950 flex flex-col', fullscreen ? 'inset-0' : 'inset-0 md:inset-3 md:rounded-2xl md:overflow-hidden md:shadow-2xl md:shadow-black/50')}>
         {/* HEADER BAR */}
         <div className="flex items-center justify-between px-3 md:px-5 py-2.5 bg-slate-900/95 backdrop-blur border-b border-white/10 flex-shrink-0">
-          {/* Left: Live badge + title */}
           <div className="flex items-center gap-3 min-w-0">
             <div className="flex items-center gap-1.5 bg-red-500/15 border border-red-500/30 rounded-full px-3 py-1 flex-shrink-0">
               <Radio className="w-3 h-3 text-red-500 animate-pulse" />
@@ -535,6 +812,7 @@ const LiveClassPage = () => {
               <>
                 <div className="w-px h-5 bg-white/10 mx-0.5" />
                 <button onClick={() => setZoom(z => Math.min(200, z + 20))} className="p-2 rounded-lg text-white/60 hover:bg-white/10 hover:text-white transition-colors"><ZoomIn className="w-4 h-4" /></button>
+                <span className="text-white/40 text-[10px] w-8 text-center">{zoom}%</span>
                 <button onClick={() => setZoom(z => Math.max(50, z - 20))} className="p-2 rounded-lg text-white/60 hover:bg-white/10 hover:text-white transition-colors"><ZoomOut className="w-4 h-4" /></button>
               </>
             )}
@@ -552,36 +830,70 @@ const LiveClassPage = () => {
 
         {/* MAIN CONTENT */}
         <div className="flex flex-1 overflow-hidden">
-          {/* Annotation Toolbar (Teacher only) */}
+          {/* Enhanced Annotation Toolbar (Teacher only) */}
           {isTeacher && (
-            <div className="flex flex-col items-center gap-1.5 p-2 bg-slate-900/80 backdrop-blur border-r border-white/10 w-14 flex-shrink-0">
-              <p className="text-[9px] text-white/30 font-bold uppercase tracking-wider mb-1">Tools</p>
-              {([
-                { t: 'pointer' as Tool, icon: MousePointer, label: 'Select' },
-                { t: 'pen' as Tool, icon: Pen, label: 'Pen' },
-                { t: 'highlighter' as Tool, icon: Highlighter, label: 'Highlight' },
-                { t: 'eraser' as Tool, icon: Eraser, label: 'Eraser' },
-              ]).map(({ t, icon: Icon, label }) => (
-                <button key={t} onClick={() => setTool(t)} title={label}
-                  className={cn('p-2 rounded-lg transition-all w-10 h-10 flex items-center justify-center',
-                    tool === t ? 'bg-primary text-white shadow-lg shadow-primary/30' : 'text-white/50 hover:bg-white/10 hover:text-white')}>
-                  <Icon className="w-4 h-4" />
-                </button>
+            <div className="flex flex-col items-center gap-0.5 p-1.5 bg-slate-900/80 backdrop-blur border-r border-white/10 w-14 flex-shrink-0 overflow-y-auto custom-scroll">
+              {toolGroups.map((group, gi) => (
+                <React.Fragment key={gi}>
+                  <p className="text-[8px] text-white/25 font-bold uppercase tracking-wider mt-1 mb-0.5">{group.label}</p>
+                  {group.tools.map(({ t, icon: Icon, label }) => (
+                    <button key={t} onClick={() => setTool(t)} title={label}
+                      className={cn('p-1.5 rounded-lg transition-all w-9 h-9 flex items-center justify-center',
+                        tool === t ? 'bg-primary text-white shadow-lg shadow-primary/30' : 'text-white/50 hover:bg-white/10 hover:text-white')}>
+                      <Icon className="w-3.5 h-3.5" />
+                    </button>
+                  ))}
+                  {gi < toolGroups.length - 1 && <div className="w-7 h-px bg-white/10 my-0.5" />}
+                </React.Fragment>
               ))}
-              <div className="w-8 h-px bg-white/10 my-1" />
-              <p className="text-[9px] text-white/30 font-bold uppercase tracking-wider mb-1">Color</p>
-              <div className="flex flex-col gap-1.5">
-                {COLORS.map(c => (
-                  <button key={c} onClick={() => { setColor(c); if (tool === 'pointer' || tool === 'eraser') setTool('pen'); }}
-                    className={cn('w-6 h-6 rounded-full border-2 transition-all hover:scale-110 mx-auto',
-                      color === c && tool !== 'eraser' ? 'border-white scale-110' : 'border-transparent')}
-                    style={{ background: c }} />
-                ))}
-              </div>
-              <div className="w-8 h-px bg-white/10 my-1" />
+
+              <div className="w-7 h-px bg-white/10 my-0.5" />
+              <p className="text-[8px] text-white/25 font-bold uppercase tracking-wider mt-0.5 mb-0.5">Color</p>
+              <button onClick={() => setShowColorPicker(!showColorPicker)} title="Colors"
+                className="p-1.5 rounded-lg text-white/50 hover:bg-white/10 w-9 h-9 flex items-center justify-center relative">
+                <div className="w-5 h-5 rounded-full border-2 border-white/40" style={{ background: color }} />
+              </button>
+              {showColorPicker && (
+                <div className="flex flex-col gap-1 py-1">
+                  {COLORS.map(c => (
+                    <button key={c} onClick={() => { setColor(c); if (tool === 'pointer' || tool === 'eraser' || tool === 'laser') setTool('pen'); }}
+                      className={cn('w-5 h-5 rounded-full border-2 transition-all hover:scale-110 mx-auto',
+                        color === c && !['eraser', 'laser'].includes(tool) ? 'border-white scale-110' : 'border-transparent')}
+                      style={{ background: c }} />
+                  ))}
+                </div>
+              )}
+
+              <div className="w-7 h-px bg-white/10 my-0.5" />
+              <p className="text-[8px] text-white/25 font-bold uppercase tracking-wider mt-0.5 mb-0.5">Size</p>
+              <button onClick={() => setShowWidthPicker(!showWidthPicker)} title="Line Width"
+                className="p-1.5 rounded-lg text-white/50 hover:bg-white/10 w-9 h-9 flex items-center justify-center">
+                <SlidersHorizontal className="w-3.5 h-3.5" />
+              </button>
+              {showWidthPicker && (
+                <div className="flex flex-col gap-1 py-1">
+                  {WIDTHS.map(w => (
+                    <button key={w} onClick={() => setLineWidth(w)}
+                      className={cn('w-8 flex items-center justify-center py-0.5 rounded mx-auto', lineWidth === w ? 'bg-white/20' : 'hover:bg-white/10')}>
+                      <div className="rounded-full bg-white" style={{ width: Math.min(w + 4, 16), height: Math.min(w, 10) }} />
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              <div className="w-7 h-px bg-white/10 my-0.5" />
+              <p className="text-[8px] text-white/25 font-bold uppercase tracking-wider mt-0.5 mb-0.5">Edit</p>
+              <button onClick={undo} title="Undo" disabled={undoStack.length === 0}
+                className="p-1.5 rounded-lg text-white/50 hover:bg-white/10 disabled:opacity-20 w-9 h-9 flex items-center justify-center transition-colors">
+                <Undo2 className="w-3.5 h-3.5" />
+              </button>
+              <button onClick={redo} title="Redo" disabled={redoStack.length === 0}
+                className="p-1.5 rounded-lg text-white/50 hover:bg-white/10 disabled:opacity-20 w-9 h-9 flex items-center justify-center transition-colors">
+                <Redo2 className="w-3.5 h-3.5" />
+              </button>
               <button onClick={clearCanvas} title="Clear All"
-                className="p-2 rounded-lg text-red-400/70 hover:bg-red-500/20 hover:text-red-400 transition-colors">
-                <Trash2 className="w-4 h-4" />
+                className="p-1.5 rounded-lg text-red-400/70 hover:bg-red-500/20 hover:text-red-400 w-9 h-9 flex items-center justify-center transition-colors">
+                <Trash2 className="w-3.5 h-3.5" />
               </button>
             </div>
           )}
@@ -590,12 +902,12 @@ const LiveClassPage = () => {
           <div ref={boardContainerRef} className="flex-1 overflow-auto flex items-start justify-center bg-slate-950 relative p-3 md:p-6">
             {hasPDF ? (
               <div className="relative inline-block">
-                <canvas ref={pdfCanvasRef} className="max-w-full shadow-2xl shadow-black/50" style={{ display: 'block', transform: 'none' }} />
+                <canvas ref={pdfCanvasRef} className="max-w-full shadow-2xl shadow-black/50" style={{ display: 'block' }} />
                 <canvas
                   ref={annotCanvasRef}
                   className="absolute inset-0 w-full h-full"
                   style={{
-                    cursor: !isTeacher ? 'default' : tool === 'pointer' ? 'default' : tool === 'eraser' ? 'cell' : 'crosshair',
+                    cursor: getCursorStyle(),
                     pointerEvents: !isTeacher ? 'none' : 'auto',
                     touchAction: 'none',
                   }}
@@ -604,6 +916,28 @@ const LiveClassPage = () => {
                   onPointerUp={stopDraw}
                   onPointerLeave={() => { stopDraw(); handlePointerLeave(); }}
                 />
+                {/* Laser pointer (teacher local) */}
+                {isTeacher && tool === 'laser' && laserPos && (
+                  <div className="absolute pointer-events-none z-20"
+                    style={{ left: laserPos.x, top: laserPos.y, transform: 'translate(-50%, -50%)' }}>
+                    <div className="w-5 h-5 rounded-full bg-red-500/70 border-2 border-red-300 shadow-[0_0_20px_rgba(239,68,68,0.7)]" />
+                  </div>
+                )}
+                {/* Text input overlay */}
+                {isTeacher && textPos && (
+                  <div className="absolute z-20" style={{ left: textPos.x, top: textPos.y }}>
+                    <input
+                      type="text"
+                      value={textInput}
+                      onChange={(e) => setTextInput(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') addTextAnnotation(); if (e.key === 'Escape') { setTextPos(null); setTextInput(''); } }}
+                      autoFocus
+                      placeholder="Type text..."
+                      className="bg-black/80 text-white border border-white/30 rounded px-2 py-1 text-sm min-w-[120px] outline-none focus:border-primary"
+                      style={{ color }}
+                    />
+                  </div>
+                )}
                 {/* Teacher cursor overlay (for students) */}
                 {!isTeacher && remoteCursor?.visible && (
                   <div
@@ -615,7 +949,7 @@ const LiveClassPage = () => {
                       transition: 'left 50ms linear, top 50ms linear',
                     }}
                   >
-                    <div className="w-6 h-6 rounded-full bg-red-500/50 border-2 border-red-400 animate-pulse" />
+                    <div className="w-6 h-6 rounded-full bg-red-500/50 border-2 border-red-400 shadow-[0_0_15px_rgba(239,68,68,0.5)]" />
                     <span className="absolute top-6 left-1/2 -translate-x-1/2 text-[10px] text-red-300 whitespace-nowrap bg-black/80 rounded-full px-2 py-0.5 font-medium">
                       Teacher
                     </span>
@@ -733,115 +1067,127 @@ const LiveClassPage = () => {
           <p className="text-muted-foreground text-sm">Your join request has been sent. Please wait for the teacher to approve you.</p>
           <div className="mt-8 flex items-center justify-center gap-2">
             <div className="w-2 h-2 rounded-full bg-amber-500 animate-bounce" />
-            <div className="w-2 h-2 rounded-full bg-amber-500 animate-bounce" style={{ animationDelay: '0.15s' }} />
-            <div className="w-2 h-2 rounded-full bg-amber-500 animate-bounce" style={{ animationDelay: '0.3s' }} />
+            <div className="w-2 h-2 rounded-full bg-amber-500 animate-bounce [animation-delay:150ms]" />
+            <div className="w-2 h-2 rounded-full bg-amber-500 animate-bounce [animation-delay:300ms]" />
           </div>
         </div>
       </div>
     );
   }
 
-  // === MAIN LOBBY ===
+  // === LOBBY ===
   return (
-    <div className="space-y-6 max-w-3xl mx-auto">
-      <div>
-        <h1 className="text-2xl font-bold">Live Class</h1>
-        <p className="text-muted-foreground text-sm mt-1">{isTeacher ? 'Start a live teaching session with smart board' : 'Join an active live class'}</p>
+    <div className="space-y-6 max-w-4xl mx-auto">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold flex items-center gap-2">
+            <VideoIcon className="w-6 h-6 text-primary" /> Live Class
+          </h1>
+          <p className="text-muted-foreground text-sm mt-1">Interactive real-time teaching & learning</p>
+        </div>
       </div>
 
-      {isTeacher ? (
-        <div className="space-y-6">
-          <div className="bg-gradient-to-br from-blue-600 to-indigo-700 rounded-2xl p-8 text-white shadow-xl shadow-blue-900/20">
-            <div className="flex items-start gap-6">
-              <div className="w-16 h-16 rounded-2xl bg-white/15 flex items-center justify-center flex-shrink-0">
-                <PlayCircle className="w-8 h-8" />
-              </div>
-              <div className="flex-1 space-y-4">
-                <div>
-                  <h2 className="text-xl font-bold">Smart Board Teaching</h2>
-                  <p className="text-blue-200 text-sm mt-1">PDF annotations, live sync, audio/video & student management</p>
-                </div>
-                <input value={sessionTitle} onChange={e => setSessionTitle(e.target.value)}
-                  placeholder="Session title (e.g. Math - Chapter 5)"
-                  className="w-full px-4 py-3 rounded-xl bg-white/10 border border-white/20 text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-white/30 text-sm" />
-                <div className="flex gap-3 flex-wrap">
-                  <select value={selectedClassId} onChange={e => setSelectedClassId(e.target.value)}
-                    className="flex-1 min-w-[150px] px-4 py-3 rounded-xl bg-white/10 border border-white/20 text-white text-sm focus:outline-none [&>option]:text-black">
-                    <option value="">All classes</option>
-                    {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                  </select>
-                  <button onClick={startClass} disabled={starting || !sessionTitle.trim()}
-                    className="px-8 py-3 rounded-xl bg-white text-blue-600 font-bold text-sm hover:bg-blue-50 transition-all disabled:opacity-50 flex items-center gap-2 shadow-lg">
-                    {starting ? <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" /> : <PlayCircle className="w-4 h-4" />}
-                    {starting ? 'Starting...' : 'Start Live Class'}
-                  </button>
-                </div>
-              </div>
+      {/* Teacher: Start a new session */}
+      {isTeacher && !activeSession && (
+        <div className="bg-card rounded-2xl border border-border shadow-card p-6 space-y-5">
+          <h2 className="font-bold text-lg flex items-center gap-2"><PlayCircle className="w-5 h-5 text-primary" /> Start Live Class</h2>
+          <div className="space-y-4">
+            <div>
+              <label className="text-sm font-medium text-foreground mb-1 block">Session Title *</label>
+              <input value={sessionTitle} onChange={e => setSessionTitle(e.target.value)} placeholder="e.g. Math - Chapter 5"
+                className="w-full px-4 py-2.5 rounded-xl border border-border bg-background text-foreground text-sm focus:ring-2 focus:ring-primary/30 focus:border-primary outline-none transition-all" />
+            </div>
+            <div>
+              <label className="text-sm font-medium text-foreground mb-1 block">Class (Optional)</label>
+              <select value={selectedClassId} onChange={e => setSelectedClassId(e.target.value)}
+                className="w-full px-4 py-2.5 rounded-xl border border-border bg-background text-foreground text-sm focus:ring-2 focus:ring-primary/30 focus:border-primary outline-none">
+                <option value="">All classes</option>
+                {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-sm font-medium text-foreground mb-1 block">
+                <LinkIcon className="w-3.5 h-3.5 inline mr-1" /> External Meeting Link (Optional)
+              </label>
+              <input value={meetingLink} onChange={e => setMeetingLink(e.target.value)} placeholder="https://meet.google.com/... or Zoom link"
+                className="w-full px-4 py-2.5 rounded-xl border border-border bg-background text-foreground text-sm focus:ring-2 focus:ring-primary/30 focus:border-primary outline-none" />
+              <p className="text-xs text-muted-foreground mt-1.5">
+                Optionally use Google Meet, Zoom, or Teams for video while using our Smart Board for content.
+              </p>
             </div>
           </div>
-
-          <div className="bg-card rounded-2xl border border-border shadow-card p-6">
-            <h3 className="font-bold mb-3 flex items-center gap-2">
-              <ExternalLink className="w-4 h-4 text-primary" /> External Meeting Link (Optional)
-            </h3>
-            <p className="text-muted-foreground text-sm mb-3">
-              Provide a Google Meet, Zoom, or Teams link for students to join alongside the smart board.
-            </p>
-            <input value={meetingLink} onChange={e => setMeetingLink(e.target.value)}
-              placeholder="https://meet.google.com/... or https://zoom.us/..."
-              className="w-full px-4 py-3 rounded-xl border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 text-sm" />
-          </div>
+          <button onClick={startClass} disabled={starting}
+            className="w-full py-3 bg-primary text-primary-foreground rounded-xl font-semibold text-sm hover:opacity-90 disabled:opacity-60 transition-opacity flex items-center justify-center gap-2">
+            {starting ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Starting...</>
+              : <><PlayCircle className="w-4 h-4" /> Start Live Class</>}
+          </button>
         </div>
-      ) : (
-        <div className="space-y-4">
-          {activeSession ? (
-            <div className="bg-card rounded-2xl border border-border shadow-card p-6">
-              <div className="flex items-center gap-4 p-4 rounded-xl bg-emerald-50 dark:bg-emerald-900/15 border border-emerald-200 dark:border-emerald-800/40 mb-5">
-                <div className="w-3 h-3 rounded-full bg-emerald-500 animate-pulse" />
-                <div>
-                  <p className="font-semibold text-emerald-800 dark:text-emerald-300">{activeSession.title}</p>
-                  <p className="text-emerald-600 dark:text-emerald-400 text-sm">Live class in progress</p>
-                </div>
-              </div>
-              {activeSession.meeting_link && (
-                <a href={activeSession.meeting_link} target="_blank" rel="noopener noreferrer"
-                  className="flex items-center justify-center gap-2 w-full py-3 rounded-xl bg-blue-50 dark:bg-blue-900/15 text-blue-600 dark:text-blue-400 font-semibold mb-3 hover:opacity-90 border border-blue-200 dark:border-blue-800/40 transition-opacity">
-                  <VideoIcon className="w-5 h-5" /> Join External Meeting
-                </a>
-              )}
-              {joinStatus === 'approved' ? (
-                <button onClick={() => setSmartBoardOpen(true)}
-                  className="w-full py-3.5 rounded-xl bg-primary text-primary-foreground font-semibold hover:opacity-90 flex items-center justify-center gap-2 transition-opacity">
-                  <PlayCircle className="w-5 h-5" /> Enter Smart Board
-                </button>
-              ) : !joinStatus ? (
-                <button onClick={requestToJoin}
-                  className="w-full py-3.5 rounded-xl bg-emerald-600 text-white font-semibold hover:opacity-90 flex items-center justify-center gap-2 transition-opacity">
-                  <Users className="w-5 h-5" /> Request to Join
-                </button>
-              ) : null}
-            </div>
-          ) : (
-            <div className="bg-card rounded-2xl border border-border shadow-card p-10 text-center">
-              <PlayCircle className="w-16 h-16 mx-auto mb-4 text-muted-foreground opacity-20" />
-              <p className="text-muted-foreground mb-2">No live class active right now</p>
-              <p className="text-muted-foreground text-sm">Use a join code below or wait for a notification</p>
-            </div>
-          )}
-          <div className="bg-card rounded-2xl border border-border shadow-card p-6">
-            <h3 className="font-bold mb-3 flex items-center gap-2">
-              <LinkIcon className="w-4 h-4 text-primary" /> Join with Code
-            </h3>
-            <div className="flex gap-3">
-              <input value={joinCodeInput} onChange={e => setJoinCodeInput(e.target.value.toUpperCase())}
-                placeholder="Enter join code (e.g. ABC123)" maxLength={6}
-                className="flex-1 px-4 py-3 rounded-xl border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 text-sm font-mono tracking-wider uppercase" />
-              <button onClick={joinByCode} disabled={!joinCodeInput.trim()}
-                className="px-6 py-3 rounded-xl bg-primary text-primary-foreground font-semibold text-sm hover:opacity-90 disabled:opacity-50 transition-opacity">
-                Join
+      )}
+
+      {/* Teacher active session */}
+      {isTeacher && activeSession && !smartBoardOpen && (
+        <div className="bg-card rounded-2xl border border-border shadow-card p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="font-bold text-lg">{activeSession.title}</h2>
+            <div className="flex items-center gap-2">
+              <button onClick={() => setSmartBoardOpen(true)} className="px-4 py-2 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:opacity-90 transition-opacity">
+                Open Smart Board
+              </button>
+              <button onClick={endClass} className="px-4 py-2 rounded-xl bg-destructive/10 text-destructive text-sm font-semibold hover:bg-destructive/20 transition-colors">
+                End Class
               </button>
             </div>
           </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-center">
+            <div className="bg-muted/50 rounded-xl p-3">
+              <p className="text-xl font-bold text-primary">{approvedCount}</p>
+              <p className="text-xs text-muted-foreground">Active</p>
+            </div>
+            <div className="bg-muted/50 rounded-xl p-3">
+              <p className="text-xl font-bold text-amber-500">{pendingCount}</p>
+              <p className="text-xs text-muted-foreground">Pending</p>
+            </div>
+            <div className="bg-muted/50 rounded-xl p-3 col-span-2">
+              <p className="text-lg font-bold font-mono text-foreground">{joinCode}</p>
+              <p className="text-xs text-muted-foreground">Join Code</p>
+            </div>
+          </div>
+          {activeSession.meeting_link && (
+            <a href={activeSession.meeting_link} target="_blank" rel="noopener noreferrer"
+              className="mt-4 flex items-center gap-2 text-sm text-primary hover:underline">
+              <ExternalLink className="w-4 h-4" /> Open External Meeting
+            </a>
+          )}
+        </div>
+      )}
+
+      {/* Student: Join */}
+      {isStudent && !activeSession && (
+        <div className="bg-card rounded-2xl border border-border shadow-card p-8 text-center max-w-md mx-auto space-y-5">
+          <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto">
+            <VideoIcon className="w-8 h-8 text-primary" />
+          </div>
+          <h2 className="text-xl font-bold">Join a Live Class</h2>
+          <p className="text-muted-foreground text-sm">Enter the join code provided by your teacher to request access to the live class.</p>
+          <div className="flex gap-2">
+            <input value={joinCodeInput} onChange={e => setJoinCodeInput(e.target.value.toUpperCase())} placeholder="Enter join code"
+              className="flex-1 px-4 py-2.5 rounded-xl border border-border bg-background text-foreground text-sm text-center font-mono tracking-widest uppercase focus:ring-2 focus:ring-primary/30 focus:border-primary outline-none" />
+            <button onClick={joinByCode} className="px-5 py-2.5 bg-primary text-primary-foreground rounded-xl text-sm font-semibold hover:opacity-90 transition-opacity">Join</button>
+          </div>
+        </div>
+      )}
+
+      {/* Student: Active session found */}
+      {isStudent && activeSession && !joinStatus && (
+        <div className="bg-card rounded-2xl border border-border shadow-card p-8 text-center max-w-md mx-auto space-y-5">
+          <div className="w-16 h-16 rounded-2xl bg-green-500/10 flex items-center justify-center mx-auto">
+            <Radio className="w-8 h-8 text-green-500 animate-pulse" />
+          </div>
+          <h2 className="text-xl font-bold">{activeSession.title}</h2>
+          <p className="text-muted-foreground text-sm">A live class is happening now. Request to join!</p>
+          <button onClick={requestToJoin} className="w-full py-3 bg-primary text-primary-foreground rounded-xl font-semibold text-sm hover:opacity-90 transition-opacity">
+            Request to Join
+          </button>
         </div>
       )}
     </div>
