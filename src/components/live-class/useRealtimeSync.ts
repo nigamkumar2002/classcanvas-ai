@@ -15,7 +15,7 @@ export interface BoardState {
 
 export interface SerializedAnnotation {
   id: string;
-  tool: 'pen' | 'eraser' | 'highlighter';
+  tool: 'pen' | 'eraser' | 'highlighter' | 'line' | 'arrow' | 'rectangle' | 'circle';
   points: { x: number; y: number }[];
   color: string;
   width: number;
