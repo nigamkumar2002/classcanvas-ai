@@ -1118,7 +1118,14 @@ const LiveClassPage = () => {
                       Teacher
                     </span>
                   </div>
-                )}
+                  )}
+                {/* Stamps overlay */}
+                {stamps.map(s => (
+                  <div key={s.id} className="absolute pointer-events-none z-20 text-3xl animate-bounce"
+                    style={{ left: `${s.x * 100}%`, top: `${s.y * 100}%`, transform: 'translate(-50%, -50%)' }}>
+                    {s.emoji}
+                  </div>
+                ))}
               </div>
             ) : (
               <div className="text-center text-white/40 p-12">
@@ -1139,6 +1146,81 @@ const LiveClassPage = () => {
                 )}
               </div>
             )}
+
+            {/* Floating Timer */}
+            {showTimer && timerSeconds > 0 && (
+              <div className="absolute top-4 right-4 z-30 bg-slate-900/95 backdrop-blur rounded-2xl border border-white/10 p-4 shadow-2xl min-w-[160px]">
+                <div className="text-center">
+                  <p className="text-white/50 text-[10px] font-bold uppercase tracking-wider mb-1">Timer</p>
+                  <p className={cn('text-3xl font-mono font-bold', timerSeconds <= 10 ? 'text-red-400 animate-pulse' : 'text-white')}>
+                    {formatTime(timerSeconds)}
+                  </p>
+                  {isTeacher && (
+                    <button onClick={stopTimer} className="mt-2 text-xs text-red-400 hover:text-red-300 transition-colors">Stop</button>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Timer Setup (teacher) */}
+            {isTeacher && showTimer && !timerRunning && timerSeconds === 0 && (
+              <div className="absolute top-4 right-4 z-30 bg-slate-900/95 backdrop-blur rounded-2xl border border-white/10 p-4 shadow-2xl min-w-[200px]">
+                <p className="text-white text-sm font-semibold mb-3">Set Timer</p>
+                <div className="flex gap-2 mb-3">
+                  {[60, 120, 300, 600].map(s => (
+                    <button key={s} onClick={() => setTimerDuration(s)}
+                      className={cn('px-2 py-1 rounded-lg text-xs transition-colors',
+                        timerDuration === s ? 'bg-primary text-white' : 'bg-white/10 text-white/60 hover:bg-white/20')}>
+                      {s < 60 ? `${s}s` : `${s / 60}m`}
+                    </button>
+                  ))}
+                </div>
+                <button onClick={startTimer} className="w-full py-2 bg-primary text-white rounded-lg text-sm font-semibold hover:opacity-90 transition-opacity">
+                  Start Timer
+                </button>
+              </div>
+            )}
+
+            {/* Active Poll overlay */}
+            {activePoll && (
+              <div className="absolute bottom-4 left-4 z-30 bg-slate-900/95 backdrop-blur rounded-2xl border border-white/10 p-4 shadow-2xl max-w-[320px] w-full">
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-white text-sm font-bold flex items-center gap-2">
+                    <BarChart3 className="w-4 h-4 text-amber-400" /> Poll
+                  </p>
+                  {isTeacher && (
+                    <button onClick={closePoll} className="text-xs text-red-400 hover:text-red-300">Close</button>
+                  )}
+                </div>
+                <p className="text-white text-sm mb-3">{activePoll.question}</p>
+                <div className="space-y-2">
+                  {activePoll.options.map((opt, i) => {
+                    const voteCount = Object.values(activePoll.votes).filter(v => v === opt).length;
+                    const totalVotes = Object.keys(activePoll.votes).length;
+                    const pct = totalVotes > 0 ? Math.round((voteCount / totalVotes) * 100) : 0;
+                    return (
+                      <button key={i} onClick={() => votePoll(opt)} disabled={!!myVote}
+                        className={cn('w-full text-left p-2.5 rounded-xl border text-sm transition-all relative overflow-hidden',
+                          myVote === opt ? 'border-primary bg-primary/10 text-white' : 'border-white/10 bg-white/5 text-white/80 hover:border-white/30 disabled:hover:border-white/10')}>
+                        <div className="absolute inset-0 bg-primary/20 rounded-xl transition-all" style={{ width: `${pct}%` }} />
+                        <div className="relative flex justify-between items-center">
+                          <span>{opt}</span>
+                          {myVote && <span className="text-xs text-white/50">{pct}%</span>}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="text-white/30 text-[10px] mt-2 text-center">{Object.keys(activePoll.votes).length} vote(s)</p>
+              </div>
+            )}
+
+            {/* Floating Reactions */}
+            <div className="absolute bottom-20 right-4 z-30 pointer-events-none flex flex-col-reverse items-end gap-1">
+              {reactions.map(r => (
+                <div key={r.id} className="text-2xl animate-bounce opacity-80">{r.emoji}</div>
+              ))}
+            </div>
           </div>
 
           {/* Side panels */}
