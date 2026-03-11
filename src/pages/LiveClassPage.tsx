@@ -96,6 +96,27 @@ const LiveClassPage = () => {
   // Store student annotations separately to avoid race conditions
   const studentAnnotationsRef = useRef<Annotation[]>([]);
 
+  // Poll state
+  const [showPollCreator, setShowPollCreator] = useState(false);
+  const [activePoll, setActivePoll] = useState<{question: string; options: string[]; votes: Record<string, string>; id: string} | null>(null);
+  const [pollQuestion, setPollQuestion] = useState('');
+  const [pollOptions, setPollOptions] = useState(['', '']);
+  const [myVote, setMyVote] = useState<string | null>(null);
+
+  // Timer state
+  const [showTimer, setShowTimer] = useState(false);
+  const [timerSeconds, setTimerSeconds] = useState(0);
+  const [timerRunning, setTimerRunning] = useState(false);
+  const [timerDuration, setTimerDuration] = useState(300);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Spotlight / stamp state
+  const [spotlight, setSpotlight] = useState<{x: number; y: number} | null>(null);
+  const [stamps, setStamps] = useState<{id: string; emoji: string; x: number; y: number}[]>([]);
+
+  // Reactions
+  const [reactions, setReactions] = useState<{id: string; emoji: string; time: number}[]>([]);
+
   const isTeacher = user?.role === 'teacher' || user?.role === 'admin' || user?.role === 'super_admin' || user?.role === 'developer';
   const isStudent = user?.role === 'student';
 
