@@ -195,7 +195,8 @@ const LiveClassPage = () => {
         }, (payload: any) => {
           if (payload.new?.status === 'approved') {
             setJoinStatus('approved');
-            toast.success('You have been approved! You can now enter the class.');
+            setSmartBoardOpen(true);
+            toast.success('You have been approved! Entering class...');
           }
         })
         .subscribe();
