@@ -727,7 +727,122 @@ const LiveClassPage = () => {
     setRedoStack([]);
   };
 
-  // --- RENDER ---
+  // --- POLL ---
+  const createPoll = () => {
+    if (!pollQuestion.trim() || pollOptions.filter(o => o.trim()).length < 2) {
+      toast.error('Add a question and at least 2 options'); return;
+    }
+    const poll: PollData = {
+      id: crypto.randomUUID(),
+      question: pollQuestion.trim(),
+      options: pollOptions.filter(o => o.trim()),
+      votes: {},
+    };
+    setActivePoll(poll);
+    broadcastPoll(poll);
+    setShowPollCreator(false);
+    setPollQuestion(''); setPollOptions(['', '']);
+    toast.success('Poll launched!');
+  };
+
+  const votePoll = (option: string) => {
+    if (!activePoll || myVote) return;
+    setMyVote(option);
+    const updated = { ...activePoll, votes: { ...activePoll.votes, [user?.user_id || '']: option } };
+    setActivePoll(updated);
+    broadcastPollVote(user?.user_id || '', option);
+  };
+
+  const closePoll = () => { setActivePoll(null); setMyVote(null); broadcastPoll({ id: '', question: '', options: [], votes: {}, closed: true }); };
+
+  // Sync remote poll
+  useEffect(() => {
+    if (!remotePoll) return;
+    if (remotePoll.closed) { setActivePoll(null); setMyVote(null); return; }
+    setActivePoll(remotePoll);
+  }, [remotePoll]);
+
+  // --- TIMER ---
+  const startTimer = () => {
+    setTimerSeconds(timerDuration);
+    setTimerRunning(true);
+    setShowTimer(true);
+    broadcastTimer({ duration: timerDuration, remaining: timerDuration, running: true });
+  };
+  const stopTimer = () => {
+    setTimerRunning(false);
+    if (timerRef.current) clearInterval(timerRef.current);
+    broadcastTimer({ duration: timerDuration, remaining: timerSeconds, running: false });
+  };
+
+  useEffect(() => {
+    if (!timerRunning) return;
+    timerRef.current = setInterval(() => {
+      setTimerSeconds(prev => {
+        if (prev <= 1) { setTimerRunning(false); toast.info('⏰ Time is up!'); return 0; }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+  }, [timerRunning]);
+
+  // broadcast timer every 5s
+  useEffect(() => {
+    if (!isTeacher || !timerRunning) return;
+    const iv = setInterval(() => { broadcastTimer({ duration: timerDuration, remaining: timerSeconds, running: true }); }, 5000);
+    return () => clearInterval(iv);
+  }, [isTeacher, timerRunning, timerSeconds, timerDuration, broadcastTimer]);
+
+  // Student timer sync
+  useEffect(() => {
+    if (isTeacher || !remoteTimer) return;
+    setTimerSeconds(remoteTimer.remaining);
+    setTimerRunning(remoteTimer.running);
+    setShowTimer(remoteTimer.running || remoteTimer.remaining > 0);
+  }, [remoteTimer, isTeacher]);
+
+  // --- REACTIONS ---
+  const sendReaction = (emoji: string) => {
+    const r = { id: crypto.randomUUID(), emoji, sender: user?.full_name || '' };
+    setReactions(prev => [...prev, { ...r, time: Date.now() }]);
+    broadcastReaction(r);
+  };
+
+  useEffect(() => {
+    if (!remoteReaction) return;
+    setReactions(prev => [...prev, { ...remoteReaction, time: Date.now() }]);
+  }, [remoteReaction]);
+
+  // Cleanup old reactions
+  useEffect(() => {
+    const iv = setInterval(() => {
+      setReactions(prev => prev.filter(r => Date.now() - r.time < 3000));
+    }, 500);
+    return () => clearInterval(iv);
+  }, []);
+
+  // --- STAMPS (Teacher places emoji on board) ---
+  const placeStamp = (emoji: string, e: React.PointerEvent) => {
+    if (!isTeacher || !annotCanvasRef.current) return;
+    const rect = annotCanvasRef.current.getBoundingClientRect();
+    const stamp: StampData = {
+      id: crypto.randomUUID(), emoji,
+      x: (e.clientX - rect.left) / rect.width,
+      y: (e.clientY - rect.top) / rect.height,
+    };
+    setStamps(prev => [...prev, stamp]);
+    broadcastStamp(stamp);
+    setTimeout(() => setStamps(prev => prev.filter(s => s.id !== stamp.id)), 4000);
+  };
+
+  useEffect(() => {
+    if (!remoteStamp) return;
+    setStamps(prev => [...prev, remoteStamp]);
+    setTimeout(() => setStamps(prev => prev.filter(s => s.id !== remoteStamp.id)), 4000);
+  }, [remoteStamp]);
+
+  const formatTime = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, '0')}`;
+
   if (loading) return (
     <div className="flex items-center justify-center h-screen bg-slate-950">
       <div className="flex flex-col items-center gap-4">
