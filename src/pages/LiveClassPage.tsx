@@ -122,7 +122,9 @@ const LiveClassPage = () => {
 
   const {
     remoteBoardState, remoteCursor, remoteDrawStroke, chatMessages,
+    remotePoll, remoteReaction, remoteTimer, remoteStamp,
     broadcastBoardState, requestBoardState, broadcastCursor, broadcastDrawStroke, broadcastClearCanvas, sendChatMessage,
+    broadcastPoll, broadcastPollVote, broadcastReaction, broadcastTimer, broadcastStamp,
   } = useRealtimeSync(activeSession?.id || null, isTeacher);
 
   const {
