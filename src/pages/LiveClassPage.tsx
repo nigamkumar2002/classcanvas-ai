@@ -153,7 +153,10 @@ const LiveClassPage = () => {
           if (isStudent) {
             const { data: p } = await supabase.from('live_session_participants')
               .select('*').eq('session_id', sessions[0].id).eq('user_id', user?.user_id).single();
-            if (p) setJoinStatus((p as any).status);
+            if (p) {
+              setJoinStatus((p as any).status);
+              if ((p as any).status === 'approved') setSmartBoardOpen(true);
+            }
           }
           const { data: parts } = await supabase.from('live_session_participants')
             .select('*').eq('session_id', sessions[0].id);
