@@ -951,6 +951,27 @@ const LiveClassPage = () => {
               className={cn('p-2 rounded-lg transition-colors', showChat ? 'bg-primary/20 text-primary' : 'text-white/60 hover:bg-white/10 hover:text-white')}>
               <MessageSquare className="w-4 h-4" />
             </button>
+            {/* Poll button */}
+            {isTeacher && (
+              <button onClick={() => activePoll ? closePoll() : setShowPollCreator(true)} title={activePoll ? 'Close Poll' : 'Create Poll'}
+                className={cn('p-2 rounded-lg transition-colors', activePoll ? 'bg-amber-500/20 text-amber-400' : 'text-white/60 hover:bg-white/10 hover:text-white')}>
+                <BarChart3 className="w-4 h-4" />
+              </button>
+            )}
+            {/* Timer button */}
+            {isTeacher && (
+              <button onClick={() => timerRunning ? stopTimer() : setShowTimer(!showTimer)} title="Timer"
+                className={cn('p-2 rounded-lg transition-colors', timerRunning ? 'bg-emerald-500/20 text-emerald-400' : 'text-white/60 hover:bg-white/10 hover:text-white')}>
+                <Timer className="w-4 h-4" />
+              </button>
+            )}
+            {/* Reactions */}
+            <div className="flex items-center gap-0.5">
+              {['👍', '❤️', '🎉', '✋'].map(emoji => (
+                <button key={emoji} onClick={() => sendReaction(emoji)} title="React"
+                  className="p-1 rounded-lg text-sm hover:bg-white/10 transition-colors">{emoji}</button>
+              ))}
+            </div>
             {isTeacher && (
               <>
                 <div className="w-px h-5 bg-white/10 mx-0.5" />
