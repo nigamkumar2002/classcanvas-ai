@@ -12,7 +12,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import * as pdfjsLib from 'pdfjs-dist';
-import { useRealtimeSync, type BoardState, type SerializedAnnotation, type CursorState } from '@/components/live-class/useRealtimeSync';
+import { useRealtimeSync, type BoardState, type SerializedAnnotation, type CursorState, type PollData, type ReactionData, type TimerData, type StampData } from '@/components/live-class/useRealtimeSync';
 import { useWebRTC } from '@/components/live-class/useWebRTC';
 import MediaControls from '@/components/live-class/MediaControls';
 import LiveChatPanel from '@/components/live-class/LiveChatPanel';
