@@ -4,7 +4,8 @@ import {
   Maximize2, Minimize2, ZoomIn, ZoomOut, Highlighter, MessageSquare, FileText, Copy, Check,
   Clock, Link as LinkIcon, ExternalLink, Video as VideoIcon, Radio,
   Circle, Square, Minus, ArrowRight, Type, Undo2, Redo2, Move, Crosshair,
-  Palette, SlidersHorizontal
+  Palette, SlidersHorizontal, BarChart3, Timer, Stamp, Star, ThumbsUp, ThumbsDown, Hand,
+  Smile, Sparkles, Target, Eye, EyeOff, X
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
