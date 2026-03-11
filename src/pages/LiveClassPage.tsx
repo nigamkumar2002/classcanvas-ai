@@ -4,14 +4,15 @@ import {
   Maximize2, Minimize2, ZoomIn, ZoomOut, Highlighter, MessageSquare, FileText, Copy, Check,
   Clock, Link as LinkIcon, ExternalLink, Video as VideoIcon, Radio,
   Circle, Square, Minus, ArrowRight, Type, Undo2, Redo2, Move, Crosshair,
-  Palette, SlidersHorizontal
+  Palette, SlidersHorizontal, BarChart3, Timer, Stamp, Star, ThumbsUp, ThumbsDown, Hand,
+  Smile, Sparkles, Target, Eye, EyeOff, X
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import * as pdfjsLib from 'pdfjs-dist';
-import { useRealtimeSync, type BoardState, type SerializedAnnotation, type CursorState } from '@/components/live-class/useRealtimeSync';
+import { useRealtimeSync, type BoardState, type SerializedAnnotation, type CursorState, type PollData, type ReactionData, type TimerData, type StampData } from '@/components/live-class/useRealtimeSync';
 import { useWebRTC } from '@/components/live-class/useWebRTC';
 import MediaControls from '@/components/live-class/MediaControls';
 import LiveChatPanel from '@/components/live-class/LiveChatPanel';
@@ -95,12 +96,35 @@ const LiveClassPage = () => {
   // Store student annotations separately to avoid race conditions
   const studentAnnotationsRef = useRef<Annotation[]>([]);
 
+  // Poll state
+  const [showPollCreator, setShowPollCreator] = useState(false);
+  const [activePoll, setActivePoll] = useState<{question: string; options: string[]; votes: Record<string, string>; id: string} | null>(null);
+  const [pollQuestion, setPollQuestion] = useState('');
+  const [pollOptions, setPollOptions] = useState(['', '']);
+  const [myVote, setMyVote] = useState<string | null>(null);
+
+  // Timer state
+  const [showTimer, setShowTimer] = useState(false);
+  const [timerSeconds, setTimerSeconds] = useState(0);
+  const [timerRunning, setTimerRunning] = useState(false);
+  const [timerDuration, setTimerDuration] = useState(300);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Spotlight / stamp state
+  const [spotlight, setSpotlight] = useState<{x: number; y: number} | null>(null);
+  const [stamps, setStamps] = useState<{id: string; emoji: string; x: number; y: number}[]>([]);
+
+  // Reactions
+  const [reactions, setReactions] = useState<{id: string; emoji: string; time: number}[]>([]);
+
   const isTeacher = user?.role === 'teacher' || user?.role === 'admin' || user?.role === 'super_admin' || user?.role === 'developer';
   const isStudent = user?.role === 'student';
 
   const {
     remoteBoardState, remoteCursor, remoteDrawStroke, chatMessages,
+    remotePoll, remoteReaction, remoteTimer, remoteStamp,
     broadcastBoardState, requestBoardState, broadcastCursor, broadcastDrawStroke, broadcastClearCanvas, sendChatMessage,
+    broadcastPoll, broadcastPollVote, broadcastReaction, broadcastTimer, broadcastStamp,
   } = useRealtimeSync(activeSession?.id || null, isTeacher);
 
   const {
@@ -131,7 +155,10 @@ const LiveClassPage = () => {
           if (isStudent) {
             const { data: p } = await supabase.from('live_session_participants')
               .select('*').eq('session_id', sessions[0].id).eq('user_id', user?.user_id).single();
-            if (p) setJoinStatus((p as any).status);
+            if (p) {
+              setJoinStatus((p as any).status);
+              if ((p as any).status === 'approved') setSmartBoardOpen(true);
+            }
           }
           const { data: parts } = await supabase.from('live_session_participants')
             .select('*').eq('session_id', sessions[0].id);
@@ -170,7 +197,8 @@ const LiveClassPage = () => {
         }, (payload: any) => {
           if (payload.new?.status === 'approved') {
             setJoinStatus('approved');
-            toast.success('You have been approved! You can now enter the class.');
+            setSmartBoardOpen(true);
+            toast.success('You have been approved! Entering class...');
           }
         })
         .subscribe();
@@ -699,7 +727,122 @@ const LiveClassPage = () => {
     setRedoStack([]);
   };
 
-  // --- RENDER ---
+  // --- POLL ---
+  const createPoll = () => {
+    if (!pollQuestion.trim() || pollOptions.filter(o => o.trim()).length < 2) {
+      toast.error('Add a question and at least 2 options'); return;
+    }
+    const poll: PollData = {
+      id: crypto.randomUUID(),
+      question: pollQuestion.trim(),
+      options: pollOptions.filter(o => o.trim()),
+      votes: {},
+    };
+    setActivePoll(poll);
+    broadcastPoll(poll);
+    setShowPollCreator(false);
+    setPollQuestion(''); setPollOptions(['', '']);
+    toast.success('Poll launched!');
+  };
+
+  const votePoll = (option: string) => {
+    if (!activePoll || myVote) return;
+    setMyVote(option);
+    const updated = { ...activePoll, votes: { ...activePoll.votes, [user?.user_id || '']: option } };
+    setActivePoll(updated);
+    broadcastPollVote(user?.user_id || '', option);
+  };
+
+  const closePoll = () => { setActivePoll(null); setMyVote(null); broadcastPoll({ id: '', question: '', options: [], votes: {}, closed: true }); };
+
+  // Sync remote poll
+  useEffect(() => {
+    if (!remotePoll) return;
+    if (remotePoll.closed) { setActivePoll(null); setMyVote(null); return; }
+    setActivePoll(remotePoll);
+  }, [remotePoll]);
+
+  // --- TIMER ---
+  const startTimer = () => {
+    setTimerSeconds(timerDuration);
+    setTimerRunning(true);
+    setShowTimer(true);
+    broadcastTimer({ duration: timerDuration, remaining: timerDuration, running: true });
+  };
+  const stopTimer = () => {
+    setTimerRunning(false);
+    if (timerRef.current) clearInterval(timerRef.current);
+    broadcastTimer({ duration: timerDuration, remaining: timerSeconds, running: false });
+  };
+
+  useEffect(() => {
+    if (!timerRunning) return;
+    timerRef.current = setInterval(() => {
+      setTimerSeconds(prev => {
+        if (prev <= 1) { setTimerRunning(false); toast.info('⏰ Time is up!'); return 0; }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+  }, [timerRunning]);
+
+  // broadcast timer every 5s
+  useEffect(() => {
+    if (!isTeacher || !timerRunning) return;
+    const iv = setInterval(() => { broadcastTimer({ duration: timerDuration, remaining: timerSeconds, running: true }); }, 5000);
+    return () => clearInterval(iv);
+  }, [isTeacher, timerRunning, timerSeconds, timerDuration, broadcastTimer]);
+
+  // Student timer sync
+  useEffect(() => {
+    if (isTeacher || !remoteTimer) return;
+    setTimerSeconds(remoteTimer.remaining);
+    setTimerRunning(remoteTimer.running);
+    setShowTimer(remoteTimer.running || remoteTimer.remaining > 0);
+  }, [remoteTimer, isTeacher]);
+
+  // --- REACTIONS ---
+  const sendReaction = (emoji: string) => {
+    const r = { id: crypto.randomUUID(), emoji, sender: user?.full_name || '' };
+    setReactions(prev => [...prev, { ...r, time: Date.now() }]);
+    broadcastReaction(r);
+  };
+
+  useEffect(() => {
+    if (!remoteReaction) return;
+    setReactions(prev => [...prev, { ...remoteReaction, time: Date.now() }]);
+  }, [remoteReaction]);
+
+  // Cleanup old reactions
+  useEffect(() => {
+    const iv = setInterval(() => {
+      setReactions(prev => prev.filter(r => Date.now() - r.time < 3000));
+    }, 500);
+    return () => clearInterval(iv);
+  }, []);
+
+  // --- STAMPS (Teacher places emoji on board) ---
+  const placeStamp = (emoji: string, e: React.PointerEvent) => {
+    if (!isTeacher || !annotCanvasRef.current) return;
+    const rect = annotCanvasRef.current.getBoundingClientRect();
+    const stamp: StampData = {
+      id: crypto.randomUUID(), emoji,
+      x: (e.clientX - rect.left) / rect.width,
+      y: (e.clientY - rect.top) / rect.height,
+    };
+    setStamps(prev => [...prev, stamp]);
+    broadcastStamp(stamp);
+    setTimeout(() => setStamps(prev => prev.filter(s => s.id !== stamp.id)), 4000);
+  };
+
+  useEffect(() => {
+    if (!remoteStamp) return;
+    setStamps(prev => [...prev, remoteStamp]);
+    setTimeout(() => setStamps(prev => prev.filter(s => s.id !== remoteStamp.id)), 4000);
+  }, [remoteStamp]);
+
+  const formatTime = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, '0')}`;
+
   if (loading) return (
     <div className="flex items-center justify-center h-screen bg-slate-950">
       <div className="flex flex-col items-center gap-4">
@@ -808,6 +951,27 @@ const LiveClassPage = () => {
               className={cn('p-2 rounded-lg transition-colors', showChat ? 'bg-primary/20 text-primary' : 'text-white/60 hover:bg-white/10 hover:text-white')}>
               <MessageSquare className="w-4 h-4" />
             </button>
+            {/* Poll button */}
+            {isTeacher && (
+              <button onClick={() => activePoll ? closePoll() : setShowPollCreator(true)} title={activePoll ? 'Close Poll' : 'Create Poll'}
+                className={cn('p-2 rounded-lg transition-colors', activePoll ? 'bg-amber-500/20 text-amber-400' : 'text-white/60 hover:bg-white/10 hover:text-white')}>
+                <BarChart3 className="w-4 h-4" />
+              </button>
+            )}
+            {/* Timer button */}
+            {isTeacher && (
+              <button onClick={() => timerRunning ? stopTimer() : setShowTimer(!showTimer)} title="Timer"
+                className={cn('p-2 rounded-lg transition-colors', timerRunning ? 'bg-emerald-500/20 text-emerald-400' : 'text-white/60 hover:bg-white/10 hover:text-white')}>
+                <Timer className="w-4 h-4" />
+              </button>
+            )}
+            {/* Reactions */}
+            <div className="flex items-center gap-0.5">
+              {['👍', '❤️', '🎉', '✋'].map(emoji => (
+                <button key={emoji} onClick={() => sendReaction(emoji)} title="React"
+                  className="p-1 rounded-lg text-sm hover:bg-white/10 transition-colors">{emoji}</button>
+              ))}
+            </div>
             {isTeacher && (
               <>
                 <div className="w-px h-5 bg-white/10 mx-0.5" />
@@ -954,7 +1118,14 @@ const LiveClassPage = () => {
                       Teacher
                     </span>
                   </div>
-                )}
+                  )}
+                {/* Stamps overlay */}
+                {stamps.map(s => (
+                  <div key={s.id} className="absolute pointer-events-none z-20 text-3xl animate-bounce"
+                    style={{ left: `${s.x * 100}%`, top: `${s.y * 100}%`, transform: 'translate(-50%, -50%)' }}>
+                    {s.emoji}
+                  </div>
+                ))}
               </div>
             ) : (
               <div className="text-center text-white/40 p-12">
@@ -975,6 +1146,81 @@ const LiveClassPage = () => {
                 )}
               </div>
             )}
+
+            {/* Floating Timer */}
+            {showTimer && timerSeconds > 0 && (
+              <div className="absolute top-4 right-4 z-30 bg-slate-900/95 backdrop-blur rounded-2xl border border-white/10 p-4 shadow-2xl min-w-[160px]">
+                <div className="text-center">
+                  <p className="text-white/50 text-[10px] font-bold uppercase tracking-wider mb-1">Timer</p>
+                  <p className={cn('text-3xl font-mono font-bold', timerSeconds <= 10 ? 'text-red-400 animate-pulse' : 'text-white')}>
+                    {formatTime(timerSeconds)}
+                  </p>
+                  {isTeacher && (
+                    <button onClick={stopTimer} className="mt-2 text-xs text-red-400 hover:text-red-300 transition-colors">Stop</button>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Timer Setup (teacher) */}
+            {isTeacher && showTimer && !timerRunning && timerSeconds === 0 && (
+              <div className="absolute top-4 right-4 z-30 bg-slate-900/95 backdrop-blur rounded-2xl border border-white/10 p-4 shadow-2xl min-w-[200px]">
+                <p className="text-white text-sm font-semibold mb-3">Set Timer</p>
+                <div className="flex gap-2 mb-3">
+                  {[60, 120, 300, 600].map(s => (
+                    <button key={s} onClick={() => setTimerDuration(s)}
+                      className={cn('px-2 py-1 rounded-lg text-xs transition-colors',
+                        timerDuration === s ? 'bg-primary text-white' : 'bg-white/10 text-white/60 hover:bg-white/20')}>
+                      {s < 60 ? `${s}s` : `${s / 60}m`}
+                    </button>
+                  ))}
+                </div>
+                <button onClick={startTimer} className="w-full py-2 bg-primary text-white rounded-lg text-sm font-semibold hover:opacity-90 transition-opacity">
+                  Start Timer
+                </button>
+              </div>
+            )}
+
+            {/* Active Poll overlay */}
+            {activePoll && (
+              <div className="absolute bottom-4 left-4 z-30 bg-slate-900/95 backdrop-blur rounded-2xl border border-white/10 p-4 shadow-2xl max-w-[320px] w-full">
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-white text-sm font-bold flex items-center gap-2">
+                    <BarChart3 className="w-4 h-4 text-amber-400" /> Poll
+                  </p>
+                  {isTeacher && (
+                    <button onClick={closePoll} className="text-xs text-red-400 hover:text-red-300">Close</button>
+                  )}
+                </div>
+                <p className="text-white text-sm mb-3">{activePoll.question}</p>
+                <div className="space-y-2">
+                  {activePoll.options.map((opt, i) => {
+                    const voteCount = Object.values(activePoll.votes).filter(v => v === opt).length;
+                    const totalVotes = Object.keys(activePoll.votes).length;
+                    const pct = totalVotes > 0 ? Math.round((voteCount / totalVotes) * 100) : 0;
+                    return (
+                      <button key={i} onClick={() => votePoll(opt)} disabled={!!myVote}
+                        className={cn('w-full text-left p-2.5 rounded-xl border text-sm transition-all relative overflow-hidden',
+                          myVote === opt ? 'border-primary bg-primary/10 text-white' : 'border-white/10 bg-white/5 text-white/80 hover:border-white/30 disabled:hover:border-white/10')}>
+                        <div className="absolute inset-0 bg-primary/20 rounded-xl transition-all" style={{ width: `${pct}%` }} />
+                        <div className="relative flex justify-between items-center">
+                          <span>{opt}</span>
+                          {myVote && <span className="text-xs text-white/50">{pct}%</span>}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="text-white/30 text-[10px] mt-2 text-center">{Object.keys(activePoll.votes).length} vote(s)</p>
+              </div>
+            )}
+
+            {/* Floating Reactions */}
+            <div className="absolute bottom-20 right-4 z-30 pointer-events-none flex flex-col-reverse items-end gap-1">
+              {reactions.map(r => (
+                <div key={r.id} className="text-2xl animate-bounce opacity-80">{r.emoji}</div>
+              ))}
+            </div>
           </div>
 
           {/* Side panels */}
@@ -1046,6 +1292,48 @@ const LiveClassPage = () => {
                     <p className="text-sm">No materials with files uploaded yet</p>
                   </div>
                 )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Poll Creator Modal */}
+        {showPollCreator && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+            <div className="bg-slate-900 rounded-2xl shadow-2xl border border-white/10 w-full max-w-md overflow-hidden">
+              <div className="flex items-center justify-between p-5 border-b border-white/10">
+                <h3 className="font-bold text-white flex items-center gap-2"><BarChart3 className="w-4 h-4 text-amber-400" /> Create Poll</h3>
+                <button onClick={() => setShowPollCreator(false)} className="p-1.5 rounded-lg hover:bg-white/10 text-white/50 hover:text-white transition-colors"><X className="w-4 h-4" /></button>
+              </div>
+              <div className="p-5 space-y-4">
+                <div>
+                  <label className="text-sm font-medium text-white/70 mb-1 block">Question</label>
+                  <input value={pollQuestion} onChange={e => setPollQuestion(e.target.value)} placeholder="Ask your students..."
+                    className="w-full px-4 py-2.5 rounded-xl border border-white/10 bg-white/5 text-white text-sm focus:border-primary outline-none" />
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-white/70 mb-1 block">Options</label>
+                  <div className="space-y-2">
+                    {pollOptions.map((opt, i) => (
+                      <div key={i} className="flex gap-2">
+                        <input value={opt} onChange={e => { const o = [...pollOptions]; o[i] = e.target.value; setPollOptions(o); }}
+                          placeholder={`Option ${i + 1}`}
+                          className="flex-1 px-4 py-2 rounded-xl border border-white/10 bg-white/5 text-white text-sm focus:border-primary outline-none" />
+                        {pollOptions.length > 2 && (
+                          <button onClick={() => setPollOptions(pollOptions.filter((_, j) => j !== i))}
+                            className="p-2 rounded-lg text-red-400 hover:bg-red-500/20"><X className="w-4 h-4" /></button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  {pollOptions.length < 6 && (
+                    <button onClick={() => setPollOptions([...pollOptions, ''])}
+                      className="mt-2 text-xs text-primary hover:text-primary/80 transition-colors">+ Add option</button>
+                  )}
+                </div>
+                <button onClick={createPoll} className="w-full py-2.5 bg-primary text-white rounded-xl text-sm font-semibold hover:opacity-90 transition-opacity">
+                  Launch Poll
+                </button>
               </div>
             </div>
           </div>
