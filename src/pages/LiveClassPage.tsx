@@ -1296,6 +1296,48 @@ const LiveClassPage = () => {
             </div>
           </div>
         )}
+
+        {/* Poll Creator Modal */}
+        {showPollCreator && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+            <div className="bg-slate-900 rounded-2xl shadow-2xl border border-white/10 w-full max-w-md overflow-hidden">
+              <div className="flex items-center justify-between p-5 border-b border-white/10">
+                <h3 className="font-bold text-white flex items-center gap-2"><BarChart3 className="w-4 h-4 text-amber-400" /> Create Poll</h3>
+                <button onClick={() => setShowPollCreator(false)} className="p-1.5 rounded-lg hover:bg-white/10 text-white/50 hover:text-white transition-colors"><X className="w-4 h-4" /></button>
+              </div>
+              <div className="p-5 space-y-4">
+                <div>
+                  <label className="text-sm font-medium text-white/70 mb-1 block">Question</label>
+                  <input value={pollQuestion} onChange={e => setPollQuestion(e.target.value)} placeholder="Ask your students..."
+                    className="w-full px-4 py-2.5 rounded-xl border border-white/10 bg-white/5 text-white text-sm focus:border-primary outline-none" />
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-white/70 mb-1 block">Options</label>
+                  <div className="space-y-2">
+                    {pollOptions.map((opt, i) => (
+                      <div key={i} className="flex gap-2">
+                        <input value={opt} onChange={e => { const o = [...pollOptions]; o[i] = e.target.value; setPollOptions(o); }}
+                          placeholder={`Option ${i + 1}`}
+                          className="flex-1 px-4 py-2 rounded-xl border border-white/10 bg-white/5 text-white text-sm focus:border-primary outline-none" />
+                        {pollOptions.length > 2 && (
+                          <button onClick={() => setPollOptions(pollOptions.filter((_, j) => j !== i))}
+                            className="p-2 rounded-lg text-red-400 hover:bg-red-500/20"><X className="w-4 h-4" /></button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  {pollOptions.length < 6 && (
+                    <button onClick={() => setPollOptions([...pollOptions, ''])}
+                      className="mt-2 text-xs text-primary hover:text-primary/80 transition-colors">+ Add option</button>
+                  )}
+                </div>
+                <button onClick={createPoll} className="w-full py-2.5 bg-primary text-white rounded-xl text-sm font-semibold hover:opacity-90 transition-opacity">
+                  Launch Poll
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
