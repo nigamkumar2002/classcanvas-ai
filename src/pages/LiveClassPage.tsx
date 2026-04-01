@@ -95,6 +95,8 @@ const LiveClassPage = () => {
   const studentLastRenderRef = useRef<{ url: string | null; page: number; zoom: number }>({ url: null, page: 0, zoom: 0 });
   // Store student annotations separately to avoid race conditions
   const studentAnnotationsRef = useRef<Annotation[]>([]);
+  const teacherRenderVersionRef = useRef(0);
+  const studentRenderVersionRef = useRef(0);
 
   // Poll state
   const [showPollCreator, setShowPollCreator] = useState(false);
@@ -337,21 +339,43 @@ const LiveClassPage = () => {
   // --- PDF RENDERING (Teacher) ---
   useEffect(() => {
     if (!isTeacher || !pdfDoc || !pdfCanvasRef.current) return;
+    const renderVersion = ++teacherRenderVersionRef.current;
+    let cancelled = false;
+
     const render = async () => {
-      const page = await pdfDoc.getPage(currentPage);
-      const scale = (zoom / 100) * 1.5;
-      const viewport = page.getViewport({ scale, rotation: 0 });
-      const canvas = pdfCanvasRef.current!;
-      canvas.width = viewport.width; canvas.height = viewport.height;
-      await page.render({ canvasContext: canvas.getContext('2d')!, viewport }).promise;
-      if (annotCanvasRef.current) {
+      try {
+        const page = await pdfDoc.getPage(currentPage);
+        if (cancelled || renderVersion !== teacherRenderVersionRef.current) return;
+
+        const scale = (zoom / 100) * 1.5;
+        const viewport = page.getViewport({ scale, rotation: 0 });
+        const canvas = pdfCanvasRef.current;
+        const ctx = canvas?.getContext('2d');
+        if (!canvas || !ctx) return;
+
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        await page.render({ canvasContext: ctx, viewport }).promise;
+        if (cancelled || renderVersion !== teacherRenderVersionRef.current || !annotCanvasRef.current) return;
+
         annotCanvasRef.current.width = viewport.width;
         annotCanvasRef.current.height = viewport.height;
         drawAnnotations(annotations);
+      } catch (err) {
+        if (!(err instanceof Error) || err.name !== 'RenderingCancelledException') {
+          console.error('Teacher render error:', err);
+        }
       }
     };
+
     render();
-  }, [pdfDoc, currentPage, zoom, isTeacher]);
+    return () => {
+      cancelled = true;
+    };
+  }, [pdfDoc, currentPage, zoom, isTeacher, annotations, drawAnnotations]);
 
   // *** FIX: Student PDF rendering - ONLY re-render PDF when page/zoom/material change ***
   // This is the key fix: decouple PDF rendering from annotation updates
@@ -364,23 +388,36 @@ const LiveClassPage = () => {
     // Check if we actually need to re-render the PDF (page/zoom/material changed)
     const last = studentLastRenderRef.current;
     if (last.url === matUrl && last.page === pageNum && last.zoom === zoomVal) {
-      // Only annotations changed - just redraw annotation canvas without touching PDF
-      if (annotCanvasRef.current) {
-        drawAnnotations(remoteBoardState.annotations);
-        studentAnnotationsRef.current = remoteBoardState.annotations;
-      }
+      drawAnnotations(remoteBoardState.annotations);
+      studentAnnotationsRef.current = remoteBoardState.annotations;
+      setCurrentPage(pageNum);
+      setZoom(zoomVal);
       return;
     }
 
     // PDF page/zoom/material changed - full re-render
+    const renderVersion = ++studentRenderVersionRef.current;
+    let cancelled = false;
+
     const render = async () => {
       try {
         const page = await studentPdfDoc.getPage(pageNum);
+        if (cancelled || renderVersion !== studentRenderVersionRef.current) return;
+
         const scale = (zoomVal / 100) * 1.5;
         const viewport = page.getViewport({ scale, rotation: 0 });
-        const canvas = pdfCanvasRef.current!;
-        canvas.width = viewport.width; canvas.height = viewport.height;
-        await page.render({ canvasContext: canvas.getContext('2d')!, viewport }).promise;
+        const canvas = pdfCanvasRef.current;
+        const ctx = canvas?.getContext('2d');
+        if (!canvas || !ctx) return;
+
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        await page.render({ canvasContext: ctx, viewport }).promise;
+        if (cancelled || renderVersion !== studentRenderVersionRef.current) return;
+
         if (annotCanvasRef.current) {
           annotCanvasRef.current.width = viewport.width;
           annotCanvasRef.current.height = viewport.height;
@@ -395,7 +432,10 @@ const LiveClassPage = () => {
       }
     };
     render();
-  }, [studentPdfDoc, remoteBoardState?.currentPage, remoteBoardState?.zoom, remoteBoardState?.materialUrl, remoteBoardState?.annotations, isTeacher]);
+    return () => {
+      cancelled = true;
+    };
+  }, [studentPdfDoc, remoteBoardState?.currentPage, remoteBoardState?.zoom, remoteBoardState?.materialUrl, remoteBoardState?.annotations, isTeacher, drawAnnotations]);
 
   // *** FIX: Student incremental stroke rendering - no conflict with full redraws ***
   useEffect(() => {
@@ -404,9 +444,23 @@ const LiveClassPage = () => {
     const ctx = canvas.getContext('2d');
     if (!ctx || canvas.width === 0) return;
     const ann = remoteDrawStroke;
+
+    if (ann.tool === 'text') {
+      if (!ann.text || ann.points.length === 0) return;
+      drawAnnotations([...studentAnnotationsRef.current, ann]);
+      return;
+    }
+
+    if (['line', 'arrow', 'rectangle', 'circle'].includes(ann.tool)) {
+      drawAnnotations(studentAnnotationsRef.current);
+      drawShape(ctx, ann);
+      return;
+    }
+
     if (ann.points.length < 2) return;
 
     ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.beginPath();
     if (ann.tool === 'eraser') {
       ctx.globalCompositeOperation = 'destination-out';
@@ -434,10 +488,34 @@ const LiveClassPage = () => {
     if (!canvas || canvas.width === 0) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
+
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.restore();
+
     anns.forEach(ann => {
+      if (ann.tool === 'text') {
+        if (!ann.text || ann.points.length === 0) return;
+        ctx.save();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.fillStyle = ann.color;
+        ctx.font = `${ann.fontSize ?? ann.width * 6 + 12}px sans-serif`;
+        ctx.textBaseline = 'top';
+        ctx.fillText(ann.text, ann.points[0].x, ann.points[0].y);
+        ctx.restore();
+        return;
+      }
+
+      if (['line', 'arrow', 'rectangle', 'circle'].includes(ann.tool)) {
+        drawShape(ctx, ann);
+        return;
+      }
+
       if (ann.points.length < 2) return;
+
       ctx.save();
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.beginPath();
       if (ann.tool === 'eraser') {
         ctx.globalCompositeOperation = 'destination-out';
@@ -493,7 +571,7 @@ const LiveClassPage = () => {
     const rect = annotCanvasRef.current.getBoundingClientRect();
     const x = (e.clientX - rect.left) / rect.width;
     const y = (e.clientY - rect.top) / rect.height;
-    broadcastCursor({ x, y, visible: true });
+    broadcastCursor({ x, y, visible: true, mode: tool === 'laser' ? 'laser' : 'pointer' });
 
     if (tool === 'laser') {
       setLaserPos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
@@ -503,9 +581,9 @@ const LiveClassPage = () => {
   }, [isTeacher, broadcastCursor, tool]);
 
   const handlePointerLeave = useCallback(() => {
-    if (isTeacher) broadcastCursor({ x: 0, y: 0, visible: false });
+    if (isTeacher) broadcastCursor({ x: 0, y: 0, visible: false, mode: tool === 'laser' ? 'laser' : 'pointer' });
     setLaserPos(null);
-  }, [isTeacher, broadcastCursor]);
+  }, [isTeacher, broadcastCursor, tool]);
 
   // --- DRAWING (Teacher only) ---
   const getPos = (e: React.PointerEvent, canvas: HTMLCanvasElement) => {
@@ -577,10 +655,11 @@ const LiveClassPage = () => {
     }
   };
 
-  const drawShape = (ctx: CanvasRenderingContext2D, ann: Annotation) => {
+  function drawShape(ctx: CanvasRenderingContext2D, ann: Annotation) {
     if (ann.points.length < 2) return;
     const [start, end] = [ann.points[0], ann.points[ann.points.length - 1]];
     ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.strokeStyle = ann.color;
     ctx.lineWidth = ann.width;
     ctx.lineCap = 'round'; ctx.lineJoin = 'round';
@@ -608,48 +687,7 @@ const LiveClassPage = () => {
     }
     ctx.stroke();
     ctx.restore();
-  };
-
-  // Override drawAnnotations to handle shapes
-  const drawAnnotationsWithShapes = useCallback((anns: Annotation[]) => {
-    const canvas = annotCanvasRef.current;
-    if (!canvas || canvas.width === 0) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    anns.forEach(ann => {
-      if (ann.points.length < 2) return;
-      if (['line', 'arrow', 'rectangle', 'circle'].includes(ann.tool)) {
-        drawShape(ctx, ann);
-        return;
-      }
-      ctx.save();
-      ctx.beginPath();
-      if (ann.tool === 'eraser') {
-        ctx.globalCompositeOperation = 'destination-out';
-        ctx.lineWidth = ann.width * 5;
-      } else if (ann.tool === 'highlighter') {
-        ctx.globalCompositeOperation = 'source-over';
-        ctx.globalAlpha = 0.35;
-        ctx.lineWidth = ann.width * 6;
-      } else {
-        ctx.globalCompositeOperation = 'source-over';
-        ctx.globalAlpha = 1;
-        ctx.lineWidth = ann.width;
-      }
-      ctx.strokeStyle = ann.tool === 'eraser' ? '#000' : ann.color;
-      ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-      ctx.moveTo(ann.points[0].x, ann.points[0].y);
-      ann.points.slice(1).forEach(p => ctx.lineTo(p.x, p.y));
-      ctx.stroke();
-      ctx.restore();
-    });
-  }, []);
-
-  // Replace the original drawAnnotations with shape-aware version
-  useEffect(() => {
-    if (isTeacher) drawAnnotationsWithShapes(annotations);
-  }, [annotations, drawAnnotationsWithShapes, isTeacher]);
+  }
 
   const stopDraw = () => {
     if (!isDrawing || !currentAnnotation) return;
@@ -668,23 +706,17 @@ const LiveClassPage = () => {
     const scaleY = canvas.height / canvas.getBoundingClientRect().height;
     const x = textPos.x * scaleX;
     const y = textPos.y * scaleY;
-
-    // Draw text directly on canvas
-    const ctx = canvas.getContext('2d')!;
-    ctx.save();
-    ctx.font = `${lineWidth * 6 + 12}px sans-serif`;
-    ctx.fillStyle = color;
-    ctx.fillText(textInput, x, y);
-    ctx.restore();
-
-    // Create annotation for sync - use pen tool type with special encoding
+    const fontSize = lineWidth * 6 + 12;
     const textAnn: Annotation = {
       id: crypto.randomUUID(),
-      tool: 'pen',
-      points: [{ x, y }, { x: x + 1, y: y + 1 }], // minimal points
+      tool: 'text',
+      points: [{ x, y }],
       color,
       width: lineWidth,
+      text: textInput.trim(),
+      fontSize,
     };
+
     setUndoStack(prev => [...prev, annotations]);
     setRedoStack([]);
     setAnnotations(prev => [...prev, textAnn]);
@@ -1074,6 +1106,8 @@ const LiveClassPage = () => {
                     cursor: getCursorStyle(),
                     pointerEvents: !isTeacher ? 'none' : 'auto',
                     touchAction: 'none',
+                    transform: 'none',
+                    transformOrigin: 'top left',
                   }}
                   onPointerDown={startDraw}
                   onPointerMove={draw}
@@ -1113,9 +1147,15 @@ const LiveClassPage = () => {
                       transition: 'left 50ms linear, top 50ms linear',
                     }}
                   >
-                    <div className="w-6 h-6 rounded-full bg-red-500/50 border-2 border-red-400 shadow-[0_0_15px_rgba(239,68,68,0.5)]" />
+                    {remoteCursor.mode === 'laser' ? (
+                      <div className="w-6 h-6 rounded-full bg-red-500/50 border-2 border-red-400 shadow-[0_0_15px_rgba(239,68,68,0.5)]" />
+                    ) : (
+                      <div className="flex items-center justify-center w-7 h-7 rounded-full bg-slate-900/80 border border-white/20 shadow-xl">
+                        <MousePointer className="w-3.5 h-3.5 text-white" fill="currentColor" />
+                      </div>
+                    )}
                     <span className="absolute top-6 left-1/2 -translate-x-1/2 text-[10px] text-red-300 whitespace-nowrap bg-black/80 rounded-full px-2 py-0.5 font-medium">
-                      Teacher
+                      {remoteCursor.mode === 'laser' ? 'Laser' : 'Teacher'}
                     </span>
                   </div>
                   )}
