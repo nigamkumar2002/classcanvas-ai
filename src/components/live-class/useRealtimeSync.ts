@@ -15,16 +15,19 @@ export interface BoardState {
 
 export interface SerializedAnnotation {
   id: string;
-  tool: 'pen' | 'eraser' | 'highlighter' | 'line' | 'arrow' | 'rectangle' | 'circle';
+  tool: 'pen' | 'eraser' | 'highlighter' | 'line' | 'arrow' | 'rectangle' | 'circle' | 'text';
   points: { x: number; y: number }[];
   color: string;
   width: number;
+  text?: string;
+  fontSize?: number;
 }
 
 export interface CursorState {
   x: number;
   y: number;
   visible: boolean;
+  mode?: 'pointer' | 'laser';
 }
 
 export interface ChatMessage {
