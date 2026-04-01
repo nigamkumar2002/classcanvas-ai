@@ -336,6 +336,66 @@ const LiveClassPage = () => {
     }).catch(err => console.error('Student PDF load error:', err));
   }, [isTeacher, remoteBoardState?.materialUrl, studentMaterialUrl]);
 
+  // --- DRAW ANNOTATIONS (used for full redraw) ---
+  const drawAnnotations = useCallback((anns: Annotation[]) => {
+    const canvas = annotCanvasRef.current;
+    if (!canvas || canvas.width === 0) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.restore();
+
+    anns.forEach(ann => {
+      if (ann.tool === 'text') {
+        if (!ann.text || ann.points.length === 0) return;
+        ctx.save();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.fillStyle = ann.color;
+        ctx.font = `${ann.fontSize ?? ann.width * 6 + 12}px sans-serif`;
+        ctx.textBaseline = 'top';
+        ctx.fillText(ann.text, ann.points[0].x, ann.points[0].y);
+        ctx.restore();
+        return;
+      }
+
+      if (['line', 'arrow', 'rectangle', 'circle'].includes(ann.tool)) {
+        drawShape(ctx, ann);
+        return;
+      }
+
+      if (ann.points.length < 2) return;
+
+      ctx.save();
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.beginPath();
+      if (ann.tool === 'eraser') {
+        ctx.globalCompositeOperation = 'destination-out';
+        ctx.lineWidth = ann.width * 5;
+      } else if (ann.tool === 'highlighter') {
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.globalAlpha = 0.35;
+        ctx.lineWidth = ann.width * 6;
+      } else {
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.globalAlpha = 1;
+        ctx.lineWidth = ann.width;
+      }
+      ctx.strokeStyle = ann.tool === 'eraser' ? '#000' : ann.color;
+      ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+      ctx.moveTo(ann.points[0].x, ann.points[0].y);
+      ann.points.slice(1).forEach(p => ctx.lineTo(p.x, p.y));
+      ctx.stroke();
+      ctx.restore();
+    });
+  }, []);
+
+  useEffect(() => {
+    if (isTeacher) drawAnnotations(annotations);
+  }, [annotations, drawAnnotations, isTeacher]);
+
   // --- PDF RENDERING (Teacher) ---
   useEffect(() => {
     if (!isTeacher || !pdfDoc || !pdfCanvasRef.current) return;
