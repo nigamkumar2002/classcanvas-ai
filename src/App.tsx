@@ -16,6 +16,15 @@ import AnalyticsPage from "@/pages/AnalyticsPage";
 import SettingsPage from "@/pages/SettingsPage";
 import CalendarPage from "@/pages/CalendarPage";
 import AnnouncementsPage from "@/pages/AnnouncementsPage";
+import ContentApprovalPage from "@/pages/ContentApprovalPage";
+import AttendancePage from "@/pages/AttendancePage";
+import GradeBookPage from "@/pages/GradeBookPage";
+import MessagesPage from "@/pages/MessagesPage";
+import FeeManagementPage from "@/pages/FeeManagementPage";
+import CertificatesPage from "@/pages/CertificatesPage";
+import StudyPlannerPage from "@/pages/StudyPlannerPage";
+import FeedbackPage from "@/pages/FeedbackPage";
+import AuditLogsPage from "@/pages/AuditLogsPage";
 import NotFound from "./pages/NotFound";
 
 const AppRoutes = () => {
@@ -58,6 +67,17 @@ const AppRoutes = () => {
       <Route path="/settings" element={wrap(SettingsPage)} />
       <Route path="/calendar" element={wrap(CalendarPage)} />
       <Route path="/announcements" element={wrap(AnnouncementsPage)} />
+
+      {/* New feature routes */}
+      <Route path="/approvals" element={wrap(ContentApprovalPage, ['developer', 'super_admin', 'admin', 'teacher'])} />
+      <Route path="/attendance" element={wrap(AttendancePage)} />
+      <Route path="/gradebook" element={wrap(GradeBookPage)} />
+      <Route path="/messages" element={wrap(MessagesPage)} />
+      <Route path="/fees" element={wrap(FeeManagementPage, ['developer', 'super_admin', 'admin', 'student'])} />
+      <Route path="/certificates" element={wrap(CertificatesPage)} />
+      <Route path="/study-planner" element={wrap(StudyPlannerPage, ['student'])} />
+      <Route path="/feedback" element={wrap(FeedbackPage)} />
+      <Route path="/audit-logs" element={wrap(AuditLogsPage, ['developer', 'super_admin'])} />
 
       <Route path="*" element={<NotFound />} />
     </Routes>
