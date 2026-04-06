@@ -83,18 +83,29 @@ const ClassesPage = () => {
     return n;
   };
 
+  const submitForApproval = async (contentType: string, contentId: string, contentTitle: string) => {
+    if (!user?.school_id) return;
+    const needsApproval = user.role === 'teacher' || user.role === 'admin';
+    if (!needsApproval) return;
+    await supabase.from('content_approvals').insert({
+      content_type: contentType, content_id: contentId, content_title: contentTitle,
+      submitted_by: user.id, school_id: user.school_id,
+    } as any);
+  };
+
   const handleCreateClass = async () => {
     if (!className.trim()) { setFormError('Class name required'); return; }
     if (!user?.school_id) { setFormError('Your account is not assigned to a school. Please contact your administrator.'); return; }
     setFormLoading(true); setFormError('');
-    const { error } = await supabase.from('classes').insert({
+    const { data, error } = await supabase.from('classes').insert({
       name: className.trim(),
       description: classDesc.trim() || null,
       grade_level: classGrade ? parseInt(classGrade) : null,
       created_by: user?.user_id,
       school_id: user.school_id,
-    } as any);
+    } as any).select().single();
     if (error) { setFormError(error.message); } else {
+      if (data) await submitForApproval('class', data.id, className.trim());
       setAddClassModal(false); setClassName(''); setClassDesc(''); setClassGrade('');
       fetchAll();
     }
@@ -105,14 +116,15 @@ const ClassesPage = () => {
     if (!subjectName.trim() || !addSubjectModal.classId) { setFormError('Subject name required'); return; }
     if (!user?.school_id) { setFormError('Your account is not assigned to a school. Please contact your administrator.'); return; }
     setFormLoading(true); setFormError('');
-    const { error } = await supabase.from('subjects').insert({
+    const { data, error } = await supabase.from('subjects').insert({
       class_id: addSubjectModal.classId,
       name: subjectName.trim(),
       color: subjectColor,
       teacher_id: user?.user_id,
       school_id: user.school_id,
-    } as any);
+    } as any).select().single();
     if (error) { setFormError(error.message); } else {
+      if (data) await submitForApproval('subject', data.id, subjectName.trim());
       setAddSubjectModal({ open: false }); setSubjectName(''); setSubjectColor(SUBJECT_COLORS[0]);
       fetchAll();
     }
@@ -123,13 +135,14 @@ const ClassesPage = () => {
     if (!chapterName.trim() || !addChapterModal.subjectId) { setFormError('Chapter name required'); return; }
     if (!user?.school_id) { setFormError('Your account is not assigned to a school. Please contact your administrator.'); return; }
     setFormLoading(true); setFormError('');
-    const { error } = await supabase.from('chapters').insert({
+    const { data, error } = await supabase.from('chapters').insert({
       subject_id: addChapterModal.subjectId,
       name: chapterName.trim(),
       description: chapterDesc.trim() || null,
       school_id: user.school_id,
-    } as any);
+    } as any).select().single();
     if (error) { setFormError(error.message); } else {
+      if (data) await submitForApproval('chapter', data.id, chapterName.trim());
       setAddChapterModal({ open: false }); setChapterName(''); setChapterDesc('');
       fetchAll();
     }
