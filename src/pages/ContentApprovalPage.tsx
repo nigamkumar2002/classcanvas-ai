@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
-import { CheckCircle, XCircle, Clock, Eye, MessageSquare, Filter } from 'lucide-react';
+import { CheckCircle, XCircle, Clock, Eye, MessageSquare, Filter, RotateCcw, ShieldCheck, FileText, BookOpen, GraduationCap } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 
 interface Approval {
@@ -15,14 +15,23 @@ interface Approval {
   comments: string | null;
   school_id: string | null;
   created_at: string;
+  updated_at: string;
   submitter_name?: string;
+  submitter_role?: string;
 }
 
-const STATUS_STYLES: Record<string, { bg: string; text: string; label: string }> = {
-  pending: { bg: 'bg-amber-100', text: 'text-amber-700', label: 'Pending' },
-  approved: { bg: 'bg-green-100', text: 'text-green-700', label: 'Approved' },
-  rejected: { bg: 'bg-red-100', text: 'text-red-700', label: 'Rejected' },
-  revision_requested: { bg: 'bg-blue-100', text: 'text-blue-700', label: 'Revision Requested' },
+const STATUS_STYLES: Record<string, { bg: string; text: string; label: string; icon: React.ElementType }> = {
+  pending: { bg: 'bg-amber-100', text: 'text-amber-700', label: 'Pending', icon: Clock },
+  approved: { bg: 'bg-green-100', text: 'text-green-700', label: 'Approved', icon: CheckCircle },
+  rejected: { bg: 'bg-red-100', text: 'text-red-700', label: 'Rejected', icon: XCircle },
+  revision_requested: { bg: 'bg-blue-100', text: 'text-blue-700', label: 'Revision Requested', icon: RotateCcw },
+};
+
+const CONTENT_ICONS: Record<string, React.ElementType> = {
+  class: GraduationCap,
+  subject: BookOpen,
+  chapter: FileText,
+  material: FileText,
 };
 
 const ContentApprovalPage = () => {
@@ -32,53 +41,131 @@ const ContentApprovalPage = () => {
   const [filter, setFilter] = useState('all');
   const [reviewComment, setReviewComment] = useState('');
   const [reviewingId, setReviewingId] = useState<string | null>(null);
+  const [actionLoading, setActionLoading] = useState(false);
 
-  const isReviewer = user?.role === 'admin' || user?.role === 'super_admin' || user?.role === 'developer';
+  // Admin can review teacher content; super_admin can review admin content; developer can review all
+  const canReview = user?.role === 'admin' || user?.role === 'super_admin' || user?.role === 'developer';
 
   const fetchApprovals = async () => {
     const { data, error } = await supabase
       .from('content_approvals')
       .select('*')
       .order('created_at', { ascending: false });
-    if (error) { console.error(error); return; }
+    if (error) { console.error(error); setLoading(false); return; }
 
     const userIds = [...new Set((data || []).map(a => a.submitted_by))];
-    let profileMap: Record<string, string> = {};
+    let profileMap: Record<string, { name: string; role: string }> = {};
     if (userIds.length > 0) {
-      const { data: profiles } = await supabase.from('profiles').select('user_id, full_name').in('user_id', userIds);
-      profiles?.forEach(p => { profileMap[p.user_id] = p.full_name; });
+      const { data: profiles } = await supabase.from('profiles').select('user_id, full_name, role').in('user_id', userIds);
+      profiles?.forEach(p => { profileMap[p.user_id] = { name: p.full_name, role: p.role }; });
     }
 
-    setApprovals((data || []).map(a => ({ ...a, submitter_name: profileMap[a.submitted_by] || 'Unknown' })));
+    setApprovals((data || []).map(a => ({
+      ...a,
+      submitter_name: profileMap[a.submitted_by]?.name || 'Unknown',
+      submitter_role: profileMap[a.submitted_by]?.role || 'unknown',
+    })));
     setLoading(false);
   };
 
   useEffect(() => { fetchApprovals(); }, []);
 
+  // Determine if current user can review a specific approval
+  const canReviewItem = (approval: Approval) => {
+    if (user?.role === 'developer') return true;
+    // Admin reviews teacher submissions
+    if (user?.role === 'admin' && approval.submitter_role === 'teacher') return true;
+    // Super admin reviews admin submissions
+    if (user?.role === 'super_admin' && (approval.submitter_role === 'admin' || approval.submitter_role === 'teacher')) return true;
+    return false;
+  };
+
   const handleReview = async (id: string, status: string) => {
+    setActionLoading(true);
+    const approval = approvals.find(a => a.id === id);
+    if (!approval) { setActionLoading(false); return; }
+
+    // Update approval record
     const { error } = await supabase.from('content_approvals').update({
-      status, reviewer_id: user?.id, comments: reviewComment || null, updated_at: new Date().toISOString(),
-    }).eq('id', id);
-    if (error) { toast({ title: 'Error', description: error.message, variant: 'destructive' }); return; }
-    toast({ title: 'Success', description: `Content ${status}` });
+      status, reviewer_id: user?.user_id, comments: reviewComment || null, updated_at: new Date().toISOString(),
+    } as any).eq('id', id);
+
+    if (error) {
+      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+      setActionLoading(false);
+      return;
+    }
+
+    // If approved, activate the content in its respective table
+    if (status === 'approved') {
+      const table = approval.content_type === 'material' ? 'materials'
+        : approval.content_type === 'class' ? 'classes'
+        : approval.content_type === 'chapter' ? 'chapters'
+        : null;
+
+      if (table) {
+        await supabase.from(table).update({ is_active: true } as any).eq('id', approval.content_id);
+      }
+    }
+
+    // If rejected, optionally deactivate
+    if (status === 'rejected') {
+      const table = approval.content_type === 'material' ? 'materials'
+        : approval.content_type === 'class' ? 'classes'
+        : approval.content_type === 'chapter' ? 'chapters'
+        : null;
+
+      if (table) {
+        await supabase.from(table).update({ is_active: false } as any).eq('id', approval.content_id);
+      }
+    }
+
+    toast({
+      title: status === 'approved' ? 'Content Approved' : status === 'rejected' ? 'Content Rejected' : 'Revision Requested',
+      description: `"${approval.content_title}" has been ${status.replace('_', ' ')}.`,
+    });
+
     setReviewingId(null);
     setReviewComment('');
+    setActionLoading(false);
     fetchApprovals();
   };
 
   const filtered = filter === 'all' ? approvals : approvals.filter(a => a.status === filter);
 
-  if (loading) return <div className="flex items-center justify-center h-64"><div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" /></div>;
+  if (loading) return (
+    <div className="flex items-center justify-center h-64">
+      <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+    </div>
+  );
 
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold">Content Approvals</h1>
+        <h1 className="text-2xl font-bold flex items-center gap-2">
+          <ShieldCheck className="w-7 h-7 text-primary" /> Content Approvals
+        </h1>
         <p className="text-muted-foreground text-sm mt-1">
-          {isReviewer ? 'Review and approve content submissions' : 'Track your content submissions'}
+          {canReview ? 'Review and approve content submissions from your team' : 'Track your content submissions and their approval status'}
         </p>
       </div>
 
+      {/* Stats */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {[
+          { label: 'Pending', count: approvals.filter(a => a.status === 'pending').length, color: 'text-amber-600 bg-amber-50 border-amber-200' },
+          { label: 'Approved', count: approvals.filter(a => a.status === 'approved').length, color: 'text-green-600 bg-green-50 border-green-200' },
+          { label: 'Rejected', count: approvals.filter(a => a.status === 'rejected').length, color: 'text-red-600 bg-red-50 border-red-200' },
+          { label: 'Revision', count: approvals.filter(a => a.status === 'revision_requested').length, color: 'text-blue-600 bg-blue-50 border-blue-200' },
+        ].map(s => (
+          <div key={s.label} className={`p-3 rounded-xl border ${s.color}`}>
+            <p className="text-2xl font-bold">{s.count}</p>
+            <p className="text-xs font-medium">{s.label}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Filters */}
       <div className="flex items-center gap-2 flex-wrap">
         <Filter className="w-4 h-4 text-muted-foreground" />
         {['all', 'pending', 'approved', 'rejected', 'revision_requested'].map(s => (
@@ -90,47 +177,78 @@ const ContentApprovalPage = () => {
         ))}
       </div>
 
+      {/* List */}
       {filtered.length === 0 ? (
         <div className="text-center py-16 bg-card rounded-2xl border border-border">
           <Clock className="w-12 h-12 mx-auto text-muted-foreground/30 mb-3" />
-          <p className="text-muted-foreground">No approval requests found</p>
+          <p className="text-muted-foreground font-medium">No approval requests found</p>
+          <p className="text-xs text-muted-foreground mt-1">Content submissions will appear here</p>
         </div>
       ) : (
         <div className="space-y-3">
           {filtered.map(a => {
             const style = STATUS_STYLES[a.status] || STATUS_STYLES.pending;
+            const ContentIcon = CONTENT_ICONS[a.content_type] || FileText;
+            const StatusIcon = style.icon;
+            const showReview = canReview && a.status === 'pending' && canReviewItem(a);
+
             return (
-              <div key={a.id} className="bg-card rounded-xl border border-border p-4 shadow-sm">
+              <div key={a.id} className="bg-card rounded-xl border border-border p-4 shadow-sm hover:shadow-md transition-shadow">
                 <div className="flex items-start justify-between gap-3">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${style.bg} ${style.text}`}>{style.label}</span>
-                      <span className="text-xs text-muted-foreground capitalize">{a.content_type}</span>
+                  <div className="flex gap-3 flex-1 min-w-0">
+                    <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${style.bg}`}>
+                      <ContentIcon className={`w-5 h-5 ${style.text}`} />
                     </div>
-                    <h3 className="font-semibold truncate">{a.content_title}</h3>
-                    <p className="text-sm text-muted-foreground mt-1">Submitted by {a.submitter_name} • {new Date(a.created_at).toLocaleDateString()}</p>
-                    {a.comments && (
-                      <div className="mt-2 p-2 rounded-lg bg-muted/50 text-sm flex items-start gap-2">
-                        <MessageSquare className="w-4 h-4 mt-0.5 text-muted-foreground flex-shrink-0" />
-                        <span>{a.comments}</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1 flex-wrap">
+                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${style.bg} ${style.text}`}>
+                          <StatusIcon className="w-3 h-3" />
+                          {style.label}
+                        </span>
+                        <span className="text-xs text-muted-foreground capitalize px-2 py-0.5 rounded bg-muted">{a.content_type}</span>
                       </div>
-                    )}
+                      <h3 className="font-semibold truncate">{a.content_title}</h3>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        Submitted by <span className="font-medium text-foreground">{a.submitter_name}</span>
+                        <span className="capitalize text-xs ml-1">({a.submitter_role})</span>
+                        {' · '}{new Date(a.created_at).toLocaleDateString()}
+                      </p>
+                      {a.comments && (
+                        <div className="mt-2 p-2.5 rounded-lg bg-muted/50 text-sm flex items-start gap-2">
+                          <MessageSquare className="w-4 h-4 mt-0.5 text-muted-foreground flex-shrink-0" />
+                          <span>{a.comments}</span>
+                        </div>
+                      )}
+                    </div>
                   </div>
-                  {isReviewer && a.status === 'pending' && (
+
+                  {showReview && (
                     <div className="flex flex-col gap-2 flex-shrink-0">
                       {reviewingId === a.id ? (
-                        <div className="space-y-2 w-48">
+                        <div className="space-y-2 w-52">
                           <textarea value={reviewComment} onChange={e => setReviewComment(e.target.value)}
-                            placeholder="Add comment..." className="w-full p-2 text-sm rounded-lg border border-border bg-background resize-none" rows={2} />
-                          <div className="flex gap-1">
-                            <button onClick={() => handleReview(a.id, 'approved')} className="flex-1 px-2 py-1.5 text-xs bg-green-600 text-white rounded-lg hover:bg-green-700">Approve</button>
-                            <button onClick={() => handleReview(a.id, 'rejected')} className="flex-1 px-2 py-1.5 text-xs bg-red-600 text-white rounded-lg hover:bg-red-700">Reject</button>
-                            <button onClick={() => handleReview(a.id, 'revision_requested')} className="flex-1 px-2 py-1.5 text-xs bg-blue-600 text-white rounded-lg hover:bg-blue-700">Revise</button>
+                            placeholder="Add review comment (optional)..."
+                            className="w-full p-2.5 text-sm rounded-lg border border-border bg-background resize-none focus:outline-none focus:ring-2 focus:ring-primary/20" rows={2} />
+                          <div className="flex gap-1.5">
+                            <button onClick={() => handleReview(a.id, 'approved')} disabled={actionLoading}
+                              className="flex-1 px-2 py-1.5 text-xs bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 flex items-center justify-center gap-1">
+                              <CheckCircle className="w-3 h-3" /> Approve
+                            </button>
+                            <button onClick={() => handleReview(a.id, 'rejected')} disabled={actionLoading}
+                              className="flex-1 px-2 py-1.5 text-xs bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 flex items-center justify-center gap-1">
+                              <XCircle className="w-3 h-3" /> Reject
+                            </button>
                           </div>
-                          <button onClick={() => setReviewingId(null)} className="text-xs text-muted-foreground hover:underline w-full text-center">Cancel</button>
+                          <button onClick={() => handleReview(a.id, 'revision_requested')} disabled={actionLoading}
+                            className="w-full px-2 py-1.5 text-xs bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-1">
+                            <RotateCcw className="w-3 h-3" /> Request Revision
+                          </button>
+                          <button onClick={() => { setReviewingId(null); setReviewComment(''); }}
+                            className="text-xs text-muted-foreground hover:underline w-full text-center">Cancel</button>
                         </div>
                       ) : (
-                        <button onClick={() => setReviewingId(a.id)} className="px-3 py-1.5 text-xs bg-primary text-primary-foreground rounded-lg hover:opacity-90 flex items-center gap-1">
+                        <button onClick={() => setReviewingId(a.id)}
+                          className="px-3 py-1.5 text-xs bg-primary text-primary-foreground rounded-lg hover:opacity-90 flex items-center gap-1">
                           <Eye className="w-3 h-3" /> Review
                         </button>
                       )}
