@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { X, Upload, FileText, Video, BookOpen, ClipboardList, BookMarked, FileQuestion } from 'lucide-react';
+import { X, Upload, FileText, Video, BookOpen, ClipboardList, FileQuestion, BookMarked, ShieldCheck, Clock } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
+import { toast } from '@/hooks/use-toast';
 
 interface Props {
   chapterId: string;
@@ -26,6 +27,9 @@ const ContentUploadModal: React.FC<Props> = ({ chapterId, onClose, onSuccess }) 
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState('');
   const [drag, setDrag] = useState(false);
+
+  // Determine if this user's content needs approval
+  const needsApproval = user?.role === 'teacher' || user?.role === 'admin';
 
   const handleUpload = async () => {
     if (!title.trim()) { setError('Please enter a title'); return; }
@@ -58,7 +62,8 @@ const ContentUploadModal: React.FC<Props> = ({ chapterId, onClose, onSuccess }) 
         throw new Error('Your account is not assigned to a school. Please contact your administrator.');
       }
 
-      const { error: insertError } = await supabase.from('materials').insert({
+      // If needs approval, insert as inactive (is_active = false)
+      const { data, error: insertError } = await supabase.from('materials').insert({
         chapter_id: chapterId,
         title: title.trim(),
         type,
@@ -68,9 +73,31 @@ const ContentUploadModal: React.FC<Props> = ({ chapterId, onClose, onSuccess }) 
         file_size,
         uploaded_by: user?.user_id,
         school_id: user.school_id,
-      } as any);
+        is_active: !needsApproval, // Only auto-publish for super_admin/developer
+      } as any).select().single();
 
       if (insertError) throw insertError;
+
+      // Create approval request for teacher/admin content
+      if (needsApproval && data) {
+        await supabase.from('content_approvals').insert({
+          content_type: 'material',
+          content_id: data.id,
+          content_title: title.trim(),
+          submitted_by: user.user_id,
+          school_id: user.school_id,
+        } as any);
+
+        toast({
+          title: 'Sent for Approval',
+          description: user.role === 'teacher'
+            ? 'Your content has been submitted to the school admin for approval.'
+            : 'Your content has been submitted to the super admin for approval.',
+        });
+      } else {
+        toast({ title: 'Content Published', description: 'Content has been published successfully.' });
+      }
+
       onSuccess();
     } catch (error: any) {
       setError(error.message || 'Failed to upload content');
@@ -94,6 +121,21 @@ const ContentUploadModal: React.FC<Props> = ({ chapterId, onClose, onSuccess }) 
         </div>
 
         <div className="p-6 space-y-4">
+          {/* Approval notice */}
+          {needsApproval && (
+            <div className="flex items-start gap-3 p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-sm">
+              <Clock className="w-5 h-5 flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="font-semibold">Approval Required</p>
+                <p className="text-xs mt-0.5">
+                  {user?.role === 'teacher'
+                    ? 'Content will be sent to your school admin for review before publishing.'
+                    : 'Content will be sent to the super admin for review before publishing.'}
+                </p>
+              </div>
+            </div>
+          )}
+
           {error && <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-sm">{error}</div>}
 
           <div>
@@ -145,8 +187,14 @@ const ContentUploadModal: React.FC<Props> = ({ chapterId, onClose, onSuccess }) 
         <div className="flex gap-3 p-6 border-t border-border">
           <button onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-border font-medium text-sm hover:bg-muted">Cancel</button>
           <button onClick={handleUpload} disabled={uploading}
-            className="flex-1 py-2.5 rounded-xl bg-gradient-blue text-white font-medium text-sm hover:opacity-90 disabled:opacity-50 flex items-center justify-center gap-2">
-            {uploading ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Uploading...</> : <><Upload className="w-4 h-4" /> Upload</>}
+            className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-primary to-primary/80 text-primary-foreground font-medium text-sm hover:opacity-90 disabled:opacity-50 flex items-center justify-center gap-2">
+            {uploading ? (
+              <><div className="w-4 h-4 border-2 border-primary-foreground border-t-transparent rounded-full animate-spin" /> Uploading...</>
+            ) : needsApproval ? (
+              <><Clock className="w-4 h-4" /> Submit for Approval</>
+            ) : (
+              <><Upload className="w-4 h-4" /> Publish</>
+            )}
           </button>
         </div>
       </div>

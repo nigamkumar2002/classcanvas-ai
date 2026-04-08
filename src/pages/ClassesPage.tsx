@@ -3,16 +3,17 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import {
   Plus, ChevronDown, ChevronRight, BookOpen, FileText,
-  Trash2, Upload, Video, ClipboardList, FileQuestion, BookMarked, GraduationCap, X
+  Upload, Video, ClipboardList, FileQuestion, BookMarked, GraduationCap, X, Clock, ShieldCheck
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import ContentUploadModal from '@/components/ContentUploadModal';
 import PDFViewerModal from '@/components/PDFViewerModal';
+import { toast } from '@/hooks/use-toast';
 
-interface Class { id: string; name: string; description: string; grade_level: number; }
-interface Subject { id: string; class_id: string; name: string; description: string; color: string; }
-interface Chapter { id: string; subject_id: string; name: string; description: string; order_index: number; }
-interface Material { id: string; chapter_id: string; title: string; type: string; file_url?: string; file_type?: string; }
+interface Class { id: string; name: string; description: string; grade_level: number; is_active: boolean; }
+interface Subject { id: string; class_id: string; name: string; description: string; color: string; is_active?: boolean; }
+interface Chapter { id: string; subject_id: string; name: string; description: string; order_index: number; is_active?: boolean; }
+interface Material { id: string; chapter_id: string; title: string; type: string; file_url?: string; file_type?: string; is_active: boolean; }
 
 const TYPE_CONFIG: Record<string, { label: string; icon: React.ElementType }> = {
   theory: { label: 'Theory', icon: BookOpen },
@@ -38,12 +39,10 @@ const ClassesPage = () => {
   const [uploadModal, setUploadModal] = useState<{ open: boolean; chapterId?: string }>({ open: false });
   const [pdfModal, setPdfModal] = useState<{ open: boolean; material?: Material }>({ open: false });
 
-  // Inline modals
   const [addClassModal, setAddClassModal] = useState(false);
   const [addSubjectModal, setAddSubjectModal] = useState<{ open: boolean; classId?: string }>({ open: false });
   const [addChapterModal, setAddChapterModal] = useState<{ open: boolean; subjectId?: string }>({ open: false });
 
-  // Form states
   const [className, setClassName] = useState('');
   const [classDesc, setClassDesc] = useState('');
   const [classGrade, setClassGrade] = useState('');
@@ -54,7 +53,11 @@ const ClassesPage = () => {
   const [formLoading, setFormLoading] = useState(false);
   const [formError, setFormError] = useState('');
 
-  const canEdit = user?.role === 'admin' || user?.role === 'super_admin' || user?.role === 'teacher';
+  const canEdit = user?.role === 'admin' || user?.role === 'super_admin' || user?.role === 'teacher' || user?.role === 'developer';
+  const isStudent = user?.role === 'student';
+  
+  // Teachers/admins need approval; super_admin/developer content is auto-published
+  const needsApproval = user?.role === 'teacher' || user?.role === 'admin';
 
   const fetchAll = async () => {
     try {
@@ -67,6 +70,8 @@ const ClassesPage = () => {
       setClasses((cls as Class[]) || []);
       setSubjects((subs as Subject[]) || []);
       setChapters((chps as Chapter[]) || []);
+      // For students, only show active/approved materials
+      // For editors, show all materials (they can see pending ones)
       setMaterials((mats as Material[]) || []);
     } catch (error) {
       console.error('Error fetching data:', error);
@@ -84,28 +89,34 @@ const ClassesPage = () => {
   };
 
   const submitForApproval = async (contentType: string, contentId: string, contentTitle: string) => {
-    if (!user?.school_id) return;
-    const needsApproval = user.role === 'teacher' || user.role === 'admin';
-    if (!needsApproval) return;
+    if (!user?.school_id || !needsApproval) return;
     await supabase.from('content_approvals').insert({
       content_type: contentType, content_id: contentId, content_title: contentTitle,
-      submitted_by: user.id, school_id: user.school_id,
+      submitted_by: user.user_id, school_id: user.school_id,
     } as any);
   };
 
   const handleCreateClass = async () => {
     if (!className.trim()) { setFormError('Class name required'); return; }
-    if (!user?.school_id) { setFormError('Your account is not assigned to a school. Please contact your administrator.'); return; }
+    if (!user?.school_id) { setFormError('Your account is not assigned to a school.'); return; }
     setFormLoading(true); setFormError('');
+    
     const { data, error } = await supabase.from('classes').insert({
       name: className.trim(),
       description: classDesc.trim() || null,
       grade_level: classGrade ? parseInt(classGrade) : null,
       created_by: user?.user_id,
       school_id: user.school_id,
+      is_active: !needsApproval,
     } as any).select().single();
+    
     if (error) { setFormError(error.message); } else {
-      if (data) await submitForApproval('class', data.id, className.trim());
+      if (needsApproval && data) {
+        await submitForApproval('class', data.id, className.trim());
+        toast({ title: 'Sent for Approval', description: `Class "${className.trim()}" has been submitted for approval.` });
+      } else {
+        toast({ title: 'Class Created', description: `Class "${className.trim()}" has been published.` });
+      }
       setAddClassModal(false); setClassName(''); setClassDesc(''); setClassGrade('');
       fetchAll();
     }
@@ -114,8 +125,9 @@ const ClassesPage = () => {
 
   const handleCreateSubject = async () => {
     if (!subjectName.trim() || !addSubjectModal.classId) { setFormError('Subject name required'); return; }
-    if (!user?.school_id) { setFormError('Your account is not assigned to a school. Please contact your administrator.'); return; }
+    if (!user?.school_id) { setFormError('Your account is not assigned to a school.'); return; }
     setFormLoading(true); setFormError('');
+    
     const { data, error } = await supabase.from('subjects').insert({
       class_id: addSubjectModal.classId,
       name: subjectName.trim(),
@@ -123,8 +135,14 @@ const ClassesPage = () => {
       teacher_id: user?.user_id,
       school_id: user.school_id,
     } as any).select().single();
+    
     if (error) { setFormError(error.message); } else {
-      if (data) await submitForApproval('subject', data.id, subjectName.trim());
+      if (needsApproval && data) {
+        await submitForApproval('subject', data.id, subjectName.trim());
+        toast({ title: 'Sent for Approval', description: `Subject "${subjectName.trim()}" has been submitted for approval.` });
+      } else {
+        toast({ title: 'Subject Created', description: `Subject "${subjectName.trim()}" has been added.` });
+      }
       setAddSubjectModal({ open: false }); setSubjectName(''); setSubjectColor(SUBJECT_COLORS[0]);
       fetchAll();
     }
@@ -133,21 +151,34 @@ const ClassesPage = () => {
 
   const handleCreateChapter = async () => {
     if (!chapterName.trim() || !addChapterModal.subjectId) { setFormError('Chapter name required'); return; }
-    if (!user?.school_id) { setFormError('Your account is not assigned to a school. Please contact your administrator.'); return; }
+    if (!user?.school_id) { setFormError('Your account is not assigned to a school.'); return; }
     setFormLoading(true); setFormError('');
+    
     const { data, error } = await supabase.from('chapters').insert({
       subject_id: addChapterModal.subjectId,
       name: chapterName.trim(),
       description: chapterDesc.trim() || null,
       school_id: user.school_id,
+      is_active: !needsApproval,
     } as any).select().single();
+    
     if (error) { setFormError(error.message); } else {
-      if (data) await submitForApproval('chapter', data.id, chapterName.trim());
+      if (needsApproval && data) {
+        await submitForApproval('chapter', data.id, chapterName.trim());
+        toast({ title: 'Sent for Approval', description: `Chapter "${chapterName.trim()}" has been submitted for approval.` });
+      } else {
+        toast({ title: 'Chapter Created', description: `Chapter "${chapterName.trim()}" has been added.` });
+      }
       setAddChapterModal({ open: false }); setChapterName(''); setChapterDesc('');
       fetchAll();
     }
     setFormLoading(false);
   };
+
+  // Filter what students see - only active content
+  const visibleClasses = isStudent ? classes.filter(c => c.is_active !== false) : classes;
+  const visibleChapters = isStudent ? chapters.filter(c => c.is_active !== false) : chapters;
+  const visibleMaterials = isStudent ? materials.filter(m => m.is_active !== false) : materials;
 
   if (loading) return (
     <div className="flex items-center justify-center h-64">
@@ -159,36 +190,59 @@ const ClassesPage = () => {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">{user?.role === 'student' ? 'My Classes' : 'Classes & Content'}</h1>
-          <p className="text-muted-foreground text-sm mt-1">{classes.length} classes · {subjects.length} subjects · {chapters.length} chapters</p>
+          <h1 className="text-2xl font-bold">{isStudent ? 'My Classes' : 'Classes & Content'}</h1>
+          <p className="text-muted-foreground text-sm mt-1">{visibleClasses.length} classes · {subjects.length} subjects · {visibleChapters.length} chapters</p>
         </div>
         {canEdit && (
           <button onClick={() => { setAddClassModal(true); setFormError(''); }}
-            className="flex items-center gap-2 px-4 py-2 bg-gradient-blue text-white rounded-xl font-medium text-sm shadow-glow-blue hover:opacity-90 transition-all">
+            className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-xl font-medium text-sm hover:opacity-90 transition-all">
             <Plus className="w-4 h-4" /> Add Class
           </button>
         )}
       </div>
 
+      {/* Approval notice for teachers/admins */}
+      {needsApproval && (
+        <div className="flex items-start gap-3 p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-sm">
+          <Clock className="w-5 h-5 flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="font-semibold">Content Approval Required</p>
+            <p className="text-xs mt-0.5">
+              {user?.role === 'teacher'
+                ? 'All content you create will be sent to your school admin for approval before it becomes visible to students.'
+                : 'All content you create will be sent to the super admin for approval before it becomes visible.'}
+            </p>
+          </div>
+        </div>
+      )}
+
       <div className="space-y-3">
-        {classes.map(cls => {
+        {visibleClasses.map(cls => {
           const classSubjects = subjects.filter(s => s.class_id === cls.id);
           const isClassOpen = expandedClasses.has(cls.id);
+          const isPending = cls.is_active === false;
 
           return (
-            <div key={cls.id} className="bg-card rounded-2xl border border-border shadow-card overflow-hidden">
+            <div key={cls.id} className={cn("bg-card rounded-2xl border shadow-sm overflow-hidden", isPending ? "border-amber-300 opacity-80" : "border-border")}>
               <div className="flex items-center gap-4 p-4 hover:bg-muted/30 transition-colors">
                 <button onClick={() => setExpandedClasses(toggle(expandedClasses, cls.id))} className="flex items-center gap-4 flex-1 text-left min-w-0">
-                  <div className="w-12 h-12 rounded-xl bg-gradient-blue flex items-center justify-center flex-shrink-0">
-                    <GraduationCap className="w-6 h-6 text-white" />
+                  <div className={cn("w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0", isPending ? "bg-amber-100" : "bg-primary/10")}>
+                    <GraduationCap className={cn("w-6 h-6", isPending ? "text-amber-600" : "text-primary")} />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <h3 className="font-bold">{cls.name}</h3>
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-bold">{cls.name}</h3>
+                      {isPending && (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-700 flex items-center gap-1">
+                          <Clock className="w-3 h-3" /> Pending Approval
+                        </span>
+                      )}
+                    </div>
                     <p className="text-sm text-muted-foreground">{cls.description || 'No description'} · {classSubjects.length} subjects</p>
                   </div>
                   {isClassOpen ? <ChevronDown className="w-5 h-5 text-muted-foreground flex-shrink-0" /> : <ChevronRight className="w-5 h-5 text-muted-foreground flex-shrink-0" />}
                 </button>
-                {canEdit && (
+                {canEdit && !isPending && (
                   <button onClick={() => { setAddSubjectModal({ open: true, classId: cls.id }); setFormError(''); }}
                     className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium text-emerald-600 hover:bg-emerald-50 transition-colors">
                     <Plus className="w-3 h-3" /> Subject
@@ -201,7 +255,7 @@ const ClassesPage = () => {
                   {classSubjects.length === 0 ? (
                     <div className="p-4 pl-8 text-muted-foreground text-sm">No subjects yet.</div>
                   ) : classSubjects.map(sub => {
-                    const subChapters = chapters.filter(c => c.subject_id === sub.id);
+                    const subChapters = visibleChapters.filter(c => c.subject_id === sub.id);
                     const isSubOpen = expandedSubjects.has(sub.id);
 
                     return (
@@ -228,8 +282,9 @@ const ClassesPage = () => {
                             {subChapters.length === 0 ? (
                               <div className="pl-14 p-3 text-xs text-muted-foreground">No chapters yet.</div>
                             ) : subChapters.map(chp => {
-                              const chpMaterials = materials.filter(m => m.chapter_id === chp.id);
+                              const chpMaterials = visibleMaterials.filter(m => m.chapter_id === chp.id);
                               const isChpOpen = expandedChapters.has(chp.id);
+                              const chpPending = chp.is_active === false;
 
                               return (
                                 <div key={chp.id}>
@@ -238,8 +293,11 @@ const ClassesPage = () => {
                                       <FileText className="w-4 h-4 text-muted-foreground flex-shrink-0" />
                                       <span className="text-sm font-medium">{chp.name}</span>
                                       <span className="text-xs text-muted-foreground">({chpMaterials.length})</span>
+                                      {chpPending && (
+                                        <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-amber-100 text-amber-700">Pending</span>
+                                      )}
                                     </button>
-                                    {canEdit && (
+                                    {canEdit && !chpPending && (
                                       <button onClick={() => setUploadModal({ open: true, chapterId: chp.id })}
                                         className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium text-primary hover:bg-primary/10 transition-colors">
                                         <Upload className="w-3 h-3" /> Upload
@@ -251,11 +309,15 @@ const ClassesPage = () => {
                                     <div className="pl-20 pb-2 space-y-1">
                                       {chpMaterials.map(mat => {
                                         const cfg = TYPE_CONFIG[mat.type] || TYPE_CONFIG.theory;
+                                        const matPending = mat.is_active === false;
                                         return (
-                                          <div key={mat.id} className="flex items-center gap-2 p-2 rounded-lg hover:bg-muted/20 transition-colors group">
+                                          <div key={mat.id} className={cn("flex items-center gap-2 p-2 rounded-lg hover:bg-muted/20 transition-colors group", matPending && "opacity-60")}>
                                             <cfg.icon className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
                                             <button onClick={() => mat.file_url && setPdfModal({ open: true, material: mat })}
                                               className="text-xs font-medium text-left truncate flex-1 hover:text-primary transition-colors">{mat.title}</button>
+                                            {matPending && (
+                                              <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-amber-100 text-amber-700">Pending</span>
+                                            )}
                                             <span className="text-[10px] text-muted-foreground capitalize">{mat.type?.replace('_', ' ')}</span>
                                           </div>
                                         );
@@ -276,8 +338,8 @@ const ClassesPage = () => {
           );
         })}
 
-        {classes.length === 0 && (
-          <div className="bg-card rounded-2xl border border-border shadow-card p-12 text-center">
+        {visibleClasses.length === 0 && (
+          <div className="bg-card rounded-2xl border border-border shadow-sm p-12 text-center">
             <GraduationCap className="w-12 h-12 mx-auto mb-3 text-muted-foreground opacity-30" />
             <p className="text-muted-foreground">No classes created yet</p>
           </div>
@@ -293,6 +355,12 @@ const ClassesPage = () => {
               <button onClick={() => setAddClassModal(false)} className="p-2 rounded-xl hover:bg-muted"><X className="w-5 h-5" /></button>
             </div>
             <div className="p-6 space-y-4">
+              {needsApproval && (
+                <div className="flex items-center gap-2 p-2.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-700 text-xs">
+                  <Clock className="w-4 h-4 flex-shrink-0" />
+                  <span>This class will require approval before it becomes active.</span>
+                </div>
+              )}
               {formError && <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-sm">{formError}</div>}
               <div>
                 <label className="text-sm font-semibold mb-1.5 block">Class Name *</label>
@@ -316,8 +384,8 @@ const ClassesPage = () => {
             <div className="flex gap-3 p-6 border-t border-border">
               <button onClick={() => setAddClassModal(false)} className="flex-1 py-2.5 rounded-xl border border-border font-medium text-sm hover:bg-muted">Cancel</button>
               <button onClick={handleCreateClass} disabled={formLoading}
-                className="flex-1 py-2.5 rounded-xl bg-gradient-blue text-white font-medium text-sm hover:opacity-90 disabled:opacity-50">
-                {formLoading ? 'Creating...' : 'Create Class'}
+                className="flex-1 py-2.5 rounded-xl bg-primary text-primary-foreground font-medium text-sm hover:opacity-90 disabled:opacity-50 flex items-center justify-center gap-2">
+                {formLoading ? 'Creating...' : needsApproval ? <><Clock className="w-4 h-4" /> Submit for Approval</> : 'Create Class'}
               </button>
             </div>
           </div>
@@ -333,6 +401,12 @@ const ClassesPage = () => {
               <button onClick={() => setAddSubjectModal({ open: false })} className="p-1.5 rounded-lg hover:bg-muted"><X className="w-4 h-4" /></button>
             </div>
             <div className="p-5 space-y-4">
+              {needsApproval && (
+                <div className="flex items-center gap-2 p-2.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-700 text-xs">
+                  <Clock className="w-4 h-4 flex-shrink-0" />
+                  <span>Subject will require approval.</span>
+                </div>
+              )}
               {formError && <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-sm">{formError}</div>}
               <div>
                 <label className="text-sm font-semibold mb-1.5 block">Subject Name *</label>
@@ -353,8 +427,8 @@ const ClassesPage = () => {
             <div className="flex gap-3 p-5 border-t border-border">
               <button onClick={() => setAddSubjectModal({ open: false })} className="flex-1 py-2.5 rounded-xl border border-border font-medium text-sm hover:bg-muted">Cancel</button>
               <button onClick={handleCreateSubject} disabled={formLoading}
-                className="flex-1 py-2.5 rounded-xl bg-gradient-blue text-white font-medium text-sm hover:opacity-90 disabled:opacity-50">
-                {formLoading ? 'Adding...' : 'Add Subject'}
+                className="flex-1 py-2.5 rounded-xl bg-primary text-primary-foreground font-medium text-sm hover:opacity-90 disabled:opacity-50">
+                {formLoading ? 'Adding...' : needsApproval ? 'Submit for Approval' : 'Add Subject'}
               </button>
             </div>
           </div>
@@ -370,6 +444,12 @@ const ClassesPage = () => {
               <button onClick={() => setAddChapterModal({ open: false })} className="p-1.5 rounded-lg hover:bg-muted"><X className="w-4 h-4" /></button>
             </div>
             <div className="p-5 space-y-4">
+              {needsApproval && (
+                <div className="flex items-center gap-2 p-2.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-700 text-xs">
+                  <Clock className="w-4 h-4 flex-shrink-0" />
+                  <span>Chapter will require approval.</span>
+                </div>
+              )}
               {formError && <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-sm">{formError}</div>}
               <div>
                 <label className="text-sm font-semibold mb-1.5 block">Chapter Name *</label>
@@ -385,8 +465,8 @@ const ClassesPage = () => {
             <div className="flex gap-3 p-5 border-t border-border">
               <button onClick={() => setAddChapterModal({ open: false })} className="flex-1 py-2.5 rounded-xl border border-border font-medium text-sm hover:bg-muted">Cancel</button>
               <button onClick={handleCreateChapter} disabled={formLoading}
-                className="flex-1 py-2.5 rounded-xl bg-gradient-green text-white font-medium text-sm hover:opacity-90 disabled:opacity-50">
-                {formLoading ? 'Adding...' : 'Add Chapter'}
+                className="flex-1 py-2.5 rounded-xl bg-primary text-primary-foreground font-medium text-sm hover:opacity-90 disabled:opacity-50">
+                {formLoading ? 'Adding...' : needsApproval ? 'Submit for Approval' : 'Add Chapter'}
               </button>
             </div>
           </div>
