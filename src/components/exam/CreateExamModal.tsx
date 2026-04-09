@@ -139,15 +139,50 @@ const CreateExamModal: React.FC<Props> = ({ onClose, onCreated }) => {
       return;
     }
 
-    // For PDF/Word, read as text (basic extraction)
+    // For PDF files, use pdfjs-dist to extract text
+    if (file.type === 'application/pdf' || file.name.endsWith('.pdf')) {
+      setExtracting(true);
+      try {
+        const pdfjsLib = await import('pdfjs-dist');
+        pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
+
+        const arrayBuffer = await file.arrayBuffer();
+        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+        let fullText = '';
+
+        for (let i = 1; i <= pdf.numPages; i++) {
+          const page = await pdf.getPage(i);
+          const content = await page.getTextContent();
+          const pageText = content.items
+            .map((item: any) => item.str)
+            .join(' ');
+          fullText += pageText + '\n\n';
+        }
+
+        const trimmed = fullText.trim();
+        if (trimmed.length > 30) {
+          setDocText(trimmed);
+          toast.success(`Extracted text from ${pdf.numPages} page(s)`);
+        } else {
+          toast.info('PDF appears to be scanned/image-based. Please paste the document content in the text area below.');
+        }
+      } catch (err) {
+        console.error('PDF extraction error:', err);
+        toast.info('Could not extract PDF text. Please paste the document content in the text area below.');
+      } finally {
+        setExtracting(false);
+      }
+      return;
+    }
+
+    // For other files (Word, etc.), try reading as text
     setExtracting(true);
     try {
       const text = await file.text();
-      if (text && text.length > 50) {
+      if (text && text.length > 50 && !text.includes('\u0000')) {
         setDocText(text);
         toast.success('Document content extracted');
       } else {
-        // Fallback: ask user to paste text
         toast.info('Could not extract text automatically. Please paste the document content in the text area below.');
       }
     } catch {
