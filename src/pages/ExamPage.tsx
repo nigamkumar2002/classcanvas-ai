@@ -39,19 +39,23 @@ const ExamPage = () => {
     try {
       let query = supabase.from('exams').select('*').order('created_at', { ascending: false });
 
-      if (user?.role === 'student' && user?.class_id) {
-        const { data: subjects } = await supabase.from('subjects').select('id').eq('class_id', user.class_id);
-        if (subjects && subjects.length > 0) {
-          const subjectIds = subjects.map(s => s.id);
-          const { data: chapters } = await supabase.from('chapters').select('id').in('subject_id', subjectIds);
-          if (chapters && chapters.length > 0) {
-            const chapterIds = chapters.map(c => c.id);
-            query = query.in('chapter_id', chapterIds);
+      if (user?.role === 'student') {
+        // Students only see active (approved) exams for their class
+        query = query.eq('is_active', true);
+        if (user?.class_id) {
+          const { data: subjects } = await supabase.from('subjects').select('id').eq('class_id', user.class_id);
+          if (subjects && subjects.length > 0) {
+            const subjectIds = subjects.map(s => s.id);
+            const { data: chapters } = await supabase.from('chapters').select('id').in('subject_id', subjectIds);
+            if (chapters && chapters.length > 0) {
+              const chapterIds = chapters.map(c => c.id);
+              query = query.in('chapter_id', chapterIds);
+            } else {
+              setExams([]); setLoading(false); return;
+            }
           } else {
             setExams([]); setLoading(false); return;
           }
-        } else {
-          setExams([]); setLoading(false); return;
         }
       }
 
@@ -194,6 +198,7 @@ const ExamPage = () => {
         canManage={canManage}
         onStartExam={startExam}
         onCreateExam={() => setShowCreateModal(true)}
+        onRefresh={fetchExams}
       />
       {showCreateModal && (
         <CreateExamModal
