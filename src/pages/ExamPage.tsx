@@ -198,6 +198,7 @@ const ExamPage = () => {
         canManage={canManage}
         onStartExam={startExam}
         onCreateExam={() => setShowCreateModal(true)}
+        onRefresh={fetchExams}
       />
       {showCreateModal && (
         <CreateExamModal
