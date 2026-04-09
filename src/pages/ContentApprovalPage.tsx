@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
-import { CheckCircle, XCircle, Clock, Eye, MessageSquare, Filter, RotateCcw, ShieldCheck, FileText, BookOpen, GraduationCap } from 'lucide-react';
+import { CheckCircle, XCircle, Clock, Eye, MessageSquare, Filter, RotateCcw, ShieldCheck, FileText, BookOpen, GraduationCap, ClipboardList } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 
 interface Approval {
@@ -32,6 +32,7 @@ const CONTENT_ICONS: Record<string, React.ElementType> = {
   subject: BookOpen,
   chapter: FileText,
   material: FileText,
+  exam: ClipboardList,
 };
 
 const ContentApprovalPage = () => {
@@ -101,6 +102,7 @@ const ContentApprovalPage = () => {
       const table = approval.content_type === 'material' ? 'materials'
         : approval.content_type === 'class' ? 'classes'
         : approval.content_type === 'chapter' ? 'chapters'
+        : approval.content_type === 'exam' ? 'exams'
         : null;
 
       if (table) {
@@ -113,6 +115,7 @@ const ContentApprovalPage = () => {
       const table = approval.content_type === 'material' ? 'materials'
         : approval.content_type === 'class' ? 'classes'
         : approval.content_type === 'chapter' ? 'chapters'
+        : approval.content_type === 'exam' ? 'exams'
         : null;
 
       if (table) {
