@@ -86,7 +86,7 @@ const SchoolsPage = () => {
         'study_plans', 'announcements', 'schedules', 'audit_logs', 'live_sessions', 'assignment_submissions',
       ];
       for (const table of tables) {
-        await supabase.from(table).delete().eq('school_id', schoolId);
+        await (supabase.from(table as any).delete() as any).eq('school_id', schoolId);
       }
       // Delete profiles and user_roles for this school's users
       const { data: schoolProfiles } = await supabase.from('profiles').select('user_id').eq('school_id', schoolId);
