@@ -21,7 +21,7 @@ const ContentPreviewModal: React.FC<Props> = ({ contentType, contentId, approval
   const [extraInfo, setExtraInfo] = useState<Record<string, string>>({});
 
   useEffect(() => {
-    const fetch = async () => {
+    const fetchData = async () => {
       const table = contentType === 'material' ? 'materials'
         : contentType === 'class' ? 'classes'
         : contentType === 'chapter' ? 'chapters'
@@ -34,8 +34,9 @@ const ContentPreviewModal: React.FC<Props> = ({ contentType, contentId, approval
       // Fetch context info
       const info: Record<string, string> = {};
       if (data) {
-        if (contentType === 'material' && data.chapter_id) {
-          const { data: ch } = await supabase.from('chapters').select('name, subject_id').eq('id', data.chapter_id).single();
+        const d = data as any;
+        if (contentType === 'material' && d.chapter_id) {
+          const { data: ch } = await supabase.from('chapters').select('name, subject_id').eq('id', d.chapter_id).single();
           if (ch) {
             info.chapter = ch.name;
             const { data: sub } = await supabase.from('subjects').select('name, class_id').eq('id', ch.subject_id).single();
@@ -46,23 +47,23 @@ const ContentPreviewModal: React.FC<Props> = ({ contentType, contentId, approval
             }
           }
         }
-        if (contentType === 'chapter' && data.subject_id) {
-          const { data: sub } = await supabase.from('subjects').select('name, class_id').eq('id', data.subject_id).single();
+        if (contentType === 'chapter' && d.subject_id) {
+          const { data: sub } = await supabase.from('subjects').select('name, class_id').eq('id', d.subject_id).single();
           if (sub) {
             info.subject = sub.name;
             const { data: cls } = await supabase.from('classes').select('name').eq('id', sub.class_id).single();
             if (cls) info.class = cls.name;
           }
         }
-        if (contentType === 'class' && data.school_id) {
-          const { data: sch } = await supabase.from('schools').select('name').eq('id', data.school_id).single();
+        if (contentType === 'class' && d.school_id) {
+          const { data: sch } = await supabase.from('schools').select('name').eq('id', d.school_id).single();
           if (sch) info.school = sch.name;
         }
       }
       setExtraInfo(info);
       setLoading(false);
     };
-    fetch();
+    fetchData();
   }, [contentType, contentId]);
 
   const handleReview = async (status: string) => {
