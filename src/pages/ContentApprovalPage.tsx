@@ -3,6 +3,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { CheckCircle, XCircle, Clock, Eye, MessageSquare, Filter, RotateCcw, ShieldCheck, FileText, BookOpen, GraduationCap, ClipboardList } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
+import ExamPreviewModal from '@/components/approval/ExamPreviewModal';
+import ContentPreviewModal from '@/components/approval/ContentPreviewModal';
 
 interface Approval {
   id: string;
@@ -18,6 +20,11 @@ interface Approval {
   updated_at: string;
   submitter_name?: string;
   submitter_role?: string;
+  // Extra context
+  class_name?: string;
+  subject_name?: string;
+  chapter_name?: string;
+  school_name?: string;
 }
 
 const STATUS_STYLES: Record<string, { bg: string; text: string; label: string; icon: React.ElementType }> = {
@@ -40,11 +47,9 @@ const ContentApprovalPage = () => {
   const [approvals, setApprovals] = useState<Approval[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all');
-  const [reviewComment, setReviewComment] = useState('');
-  const [reviewingId, setReviewingId] = useState<string | null>(null);
-  const [actionLoading, setActionLoading] = useState(false);
+  const [previewExam, setPreviewExam] = useState<{ examId: string; approvalId: string } | null>(null);
+  const [previewContent, setPreviewContent] = useState<{ contentType: string; contentId: string; approvalId: string } | null>(null);
 
-  // Admin can review teacher content; super_admin can review admin content; developer can review all
   const canReview = user?.role === 'admin' || user?.role === 'super_admin' || user?.role === 'developer';
 
   const fetchApprovals = async () => {
@@ -61,77 +66,96 @@ const ContentApprovalPage = () => {
       profiles?.forEach(p => { profileMap[p.user_id] = { name: p.full_name, role: p.role }; });
     }
 
-    setApprovals((data || []).map(a => ({
-      ...a,
-      submitter_name: profileMap[a.submitted_by]?.name || 'Unknown',
-      submitter_role: profileMap[a.submitted_by]?.role || 'unknown',
-    })));
+    // Fetch context info for each approval
+    const enriched: Approval[] = [];
+    for (const a of (data || [])) {
+      const item: Approval = {
+        ...a,
+        submitter_name: profileMap[a.submitted_by]?.name || 'Unknown',
+        submitter_role: profileMap[a.submitted_by]?.role || 'unknown',
+      };
+
+      // Fetch hierarchy info
+      try {
+        if (a.content_type === 'exam') {
+          const { data: exam } = await supabase.from('exams').select('chapter_id').eq('id', a.content_id).single();
+          if (exam) {
+            const { data: ch } = await supabase.from('chapters').select('name, subject_id').eq('id', exam.chapter_id).single();
+            if (ch) {
+              item.chapter_name = ch.name;
+              const { data: sub } = await supabase.from('subjects').select('name, class_id').eq('id', ch.subject_id).single();
+              if (sub) {
+                item.subject_name = sub.name;
+                const { data: cls } = await supabase.from('classes').select('name, school_id').eq('id', sub.class_id).single();
+                if (cls) {
+                  item.class_name = cls.name;
+                  if (cls.school_id) {
+                    const { data: sch } = await supabase.from('schools').select('name').eq('id', cls.school_id).single();
+                    if (sch) item.school_name = sch.name;
+                  }
+                }
+              }
+            }
+          }
+        } else if (a.content_type === 'material') {
+          const { data: mat } = await supabase.from('materials').select('chapter_id').eq('id', a.content_id).single();
+          if (mat) {
+            const { data: ch } = await supabase.from('chapters').select('name, subject_id').eq('id', mat.chapter_id).single();
+            if (ch) {
+              item.chapter_name = ch.name;
+              const { data: sub } = await supabase.from('subjects').select('name, class_id').eq('id', ch.subject_id).single();
+              if (sub) {
+                item.subject_name = sub.name;
+                const { data: cls } = await supabase.from('classes').select('name').eq('id', sub.class_id).single();
+                if (cls) item.class_name = cls.name;
+              }
+            }
+          }
+        } else if (a.content_type === 'chapter') {
+          const { data: ch } = await supabase.from('chapters').select('name, subject_id').eq('id', a.content_id).single();
+          if (ch) {
+            item.chapter_name = ch.name;
+            const { data: sub } = await supabase.from('subjects').select('name, class_id').eq('id', ch.subject_id).single();
+            if (sub) {
+              item.subject_name = sub.name;
+              const { data: cls } = await supabase.from('classes').select('name').eq('id', sub.class_id).single();
+              if (cls) item.class_name = cls.name;
+            }
+          }
+        } else if (a.content_type === 'class') {
+          const { data: cls } = await supabase.from('classes').select('name, school_id').eq('id', a.content_id).single();
+          if (cls) {
+            item.class_name = cls.name;
+            if (cls.school_id) {
+              const { data: sch } = await supabase.from('schools').select('name').eq('id', cls.school_id).single();
+              if (sch) item.school_name = sch.name;
+            }
+          }
+        }
+      } catch { /* ignore context fetch errors */ }
+
+      enriched.push(item);
+    }
+
+    setApprovals(enriched);
     setLoading(false);
   };
 
   useEffect(() => { fetchApprovals(); }, []);
 
-  // Determine if current user can review a specific approval
   const canReviewItem = (approval: Approval) => {
     if (user?.role === 'developer') return true;
-    // Admin reviews teacher submissions
     if (user?.role === 'admin' && approval.submitter_role === 'teacher') return true;
-    // Super admin reviews admin submissions
     if (user?.role === 'super_admin' && (approval.submitter_role === 'admin' || approval.submitter_role === 'teacher')) return true;
     return false;
   };
 
-  const handleReview = async (id: string, status: string) => {
-    setActionLoading(true);
-    const approval = approvals.find(a => a.id === id);
-    if (!approval) { setActionLoading(false); return; }
-
-    // Update approval record
-    const { error } = await supabase.from('content_approvals').update({
-      status, reviewer_id: user?.user_id, comments: reviewComment || null, updated_at: new Date().toISOString(),
-    } as any).eq('id', id);
-
-    if (error) {
-      toast({ title: 'Error', description: error.message, variant: 'destructive' });
-      setActionLoading(false);
-      return;
+  const handleOpenPreview = (approval: Approval) => {
+    if (approval.content_type === 'exam') {
+      setPreviewExam({ examId: approval.content_id, approvalId: approval.id });
+    } else {
+      setPreviewContent({ contentType: approval.content_type, contentId: approval.content_id, approvalId: approval.id });
     }
-
-    // If approved, activate the content in its respective table
-    if (status === 'approved') {
-      const table = approval.content_type === 'material' ? 'materials'
-        : approval.content_type === 'class' ? 'classes'
-        : approval.content_type === 'chapter' ? 'chapters'
-        : approval.content_type === 'exam' ? 'exams'
-        : null;
-
-      if (table) {
-        await supabase.from(table).update({ is_active: true } as any).eq('id', approval.content_id);
-      }
-    }
-
-    // If rejected, optionally deactivate
-    if (status === 'rejected') {
-      const table = approval.content_type === 'material' ? 'materials'
-        : approval.content_type === 'class' ? 'classes'
-        : approval.content_type === 'chapter' ? 'chapters'
-        : approval.content_type === 'exam' ? 'exams'
-        : null;
-
-      if (table) {
-        await supabase.from(table).update({ is_active: false } as any).eq('id', approval.content_id);
-      }
-    }
-
-    toast({
-      title: status === 'approved' ? 'Content Approved' : status === 'rejected' ? 'Content Rejected' : 'Revision Requested',
-      description: `"${approval.content_title}" has been ${status.replace('_', ' ')}.`,
-    });
-
-    setReviewingId(null);
-    setReviewComment('');
-    setActionLoading(false);
-    fetchApprovals();
   };
 
   const filtered = filter === 'all' ? approvals : approvals.filter(a => a.status === filter);
@@ -211,10 +235,19 @@ const ContentApprovalPage = () => {
                         <span className="text-xs text-muted-foreground capitalize px-2 py-0.5 rounded bg-muted">{a.content_type}</span>
                       </div>
                       <h3 className="font-semibold truncate">{a.content_title}</h3>
+
+                      {/* Context details */}
+                      <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1 text-xs text-muted-foreground">
+                        {a.school_name && <span>🏫 {a.school_name}</span>}
+                        {a.class_name && <span>📚 {a.class_name}</span>}
+                        {a.subject_name && <span>📖 {a.subject_name}</span>}
+                        {a.chapter_name && <span>📄 {a.chapter_name}</span>}
+                      </div>
+
                       <p className="text-sm text-muted-foreground mt-1">
                         Submitted by <span className="font-medium text-foreground">{a.submitter_name}</span>
                         <span className="capitalize text-xs ml-1">({a.submitter_role})</span>
-                        {' · '}{new Date(a.created_at).toLocaleDateString()}
+                        {' · '}{new Date(a.created_at).toLocaleDateString()} {new Date(a.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       </p>
                       {a.comments && (
                         <div className="mt-2 p-2.5 rounded-lg bg-muted/50 text-sm flex items-start gap-2">
@@ -225,43 +258,42 @@ const ContentApprovalPage = () => {
                     </div>
                   </div>
 
-                  {showReview && (
-                    <div className="flex flex-col gap-2 flex-shrink-0">
-                      {reviewingId === a.id ? (
-                        <div className="space-y-2 w-52">
-                          <textarea value={reviewComment} onChange={e => setReviewComment(e.target.value)}
-                            placeholder="Add review comment (optional)..."
-                            className="w-full p-2.5 text-sm rounded-lg border border-border bg-background resize-none focus:outline-none focus:ring-2 focus:ring-primary/20" rows={2} />
-                          <div className="flex gap-1.5">
-                            <button onClick={() => handleReview(a.id, 'approved')} disabled={actionLoading}
-                              className="flex-1 px-2 py-1.5 text-xs bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 flex items-center justify-center gap-1">
-                              <CheckCircle className="w-3 h-3" /> Approve
-                            </button>
-                            <button onClick={() => handleReview(a.id, 'rejected')} disabled={actionLoading}
-                              className="flex-1 px-2 py-1.5 text-xs bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 flex items-center justify-center gap-1">
-                              <XCircle className="w-3 h-3" /> Reject
-                            </button>
-                          </div>
-                          <button onClick={() => handleReview(a.id, 'revision_requested')} disabled={actionLoading}
-                            className="w-full px-2 py-1.5 text-xs bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-1">
-                            <RotateCcw className="w-3 h-3" /> Request Revision
-                          </button>
-                          <button onClick={() => { setReviewingId(null); setReviewComment(''); }}
-                            className="text-xs text-muted-foreground hover:underline w-full text-center">Cancel</button>
-                        </div>
-                      ) : (
-                        <button onClick={() => setReviewingId(a.id)}
-                          className="px-3 py-1.5 text-xs bg-primary text-primary-foreground rounded-lg hover:opacity-90 flex items-center gap-1">
-                          <Eye className="w-3 h-3" /> Review
-                        </button>
-                      )}
-                    </div>
-                  )}
+                  <div className="flex flex-col gap-2 flex-shrink-0">
+                    {/* Open/Preview button - always visible for reviewers */}
+                    {canReview && canReviewItem(a) && (
+                      <button onClick={() => handleOpenPreview(a)}
+                        className="px-3 py-1.5 text-xs bg-primary text-primary-foreground rounded-lg hover:opacity-90 flex items-center gap-1">
+                        <Eye className="w-3 h-3" /> {a.status === 'pending' ? 'Review & Preview' : 'View Details'}
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             );
           })}
         </div>
+      )}
+
+      {/* Exam preview modal */}
+      {previewExam && (
+        <ExamPreviewModal
+          examId={previewExam.examId}
+          approvalId={previewExam.approvalId}
+          mode="review"
+          onClose={() => setPreviewExam(null)}
+          onApproved={fetchApprovals}
+        />
+      )}
+
+      {/* Content preview modal */}
+      {previewContent && (
+        <ContentPreviewModal
+          contentType={previewContent.contentType}
+          contentId={previewContent.contentId}
+          approvalId={previewContent.approvalId}
+          onClose={() => setPreviewContent(null)}
+          onReviewed={fetchApprovals}
+        />
       )}
     </div>
   );
