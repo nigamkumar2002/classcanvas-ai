@@ -4,7 +4,7 @@ import {
   GraduationCap, LayoutDashboard, BookOpen, Users, Settings,
   LogOut, ChevronLeft, ChevronRight, PlayCircle, FileText,
   BarChart3, School, Upload, ClipboardList, Search, Menu, Calendar, Megaphone,
-  CheckSquare, UserCheck, Award, MessageSquare, DollarSign, Star, Shield, BookMarked
+  CheckSquare, UserCheck, Award, MessageSquare, DollarSign, Star, Shield, BookMarked, User
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
@@ -21,6 +21,7 @@ const ROLE_MENUS: Record<string, { label: string; icon: React.ElementType; path:
     { label: 'Analytics', icon: BarChart3, path: '/analytics' },
     { label: 'Audit Logs', icon: Shield, path: '/audit-logs' },
     { label: 'Settings', icon: Settings, path: '/settings' },
+    { label: 'My Profile', icon: User, path: '/profile' },
   ],
   super_admin: [
     { label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
@@ -37,6 +38,7 @@ const ROLE_MENUS: Record<string, { label: string; icon: React.ElementType; path:
     { label: 'Feedback', icon: Star, path: '/feedback' },
     { label: 'Audit Logs', icon: Shield, path: '/audit-logs' },
     { label: 'Settings', icon: Settings, path: '/settings' },
+    { label: 'My Profile', icon: User, path: '/profile' },
   ],
   admin: [
     { label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
@@ -54,6 +56,7 @@ const ROLE_MENUS: Record<string, { label: string; icon: React.ElementType; path:
     { label: 'Analytics', icon: BarChart3, path: '/analytics' },
     { label: 'Feedback', icon: Star, path: '/feedback' },
     { label: 'Settings', icon: Settings, path: '/settings' },
+    { label: 'My Profile', icon: User, path: '/profile' },
   ],
   teacher: [
     { label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
@@ -84,6 +87,7 @@ const ROLE_MENUS: Record<string, { label: string; icon: React.ElementType; path:
     { label: 'Feedback', icon: Star, path: '/feedback' },
     { label: 'Calendar', icon: Calendar, path: '/calendar' },
     { label: 'Settings', icon: Settings, path: '/settings' },
+    { label: 'My Profile', icon: User, path: '/profile' },
   ],
 };
 

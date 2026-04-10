@@ -414,6 +414,7 @@ export type Database = {
           pass_marks: number
           school_id: string | null
           title: string
+          topic: string | null
           total_marks: number
         }
         Insert: {
@@ -427,6 +428,7 @@ export type Database = {
           pass_marks?: number
           school_id?: string | null
           title: string
+          topic?: string | null
           total_marks?: number
         }
         Update: {
@@ -440,6 +442,7 @@ export type Database = {
           pass_marks?: number
           school_id?: string | null
           title?: string
+          topic?: string | null
           total_marks?: number
         }
         Relationships: [
@@ -712,6 +715,7 @@ export type Database = {
           school_id: string | null
           thumbnail_url: string | null
           title: string
+          topic: string | null
           type: string
           updated_at: string
           uploaded_by: string | null
@@ -729,6 +733,7 @@ export type Database = {
           school_id?: string | null
           thumbnail_url?: string | null
           title: string
+          topic?: string | null
           type: string
           updated_at?: string
           uploaded_by?: string | null
@@ -746,6 +751,7 @@ export type Database = {
           school_id?: string | null
           thumbnail_url?: string | null
           title?: string
+          topic?: string | null
           type?: string
           updated_at?: string
           uploaded_by?: string | null

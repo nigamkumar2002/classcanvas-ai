@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
-import { Users, Plus, Search, Mail, Shield, GraduationCap, BookOpen, UserCheck, X, Eye, EyeOff, School } from 'lucide-react';
+import { Users, Plus, Search, Mail, Shield, GraduationCap, BookOpen, UserCheck, X, Eye, EyeOff, School, Trash2, AlertTriangle } from 'lucide-react';
+import { toast } from 'sonner';
 
 interface Profile {
   id: string; user_id: string; full_name: string; email: string;
@@ -137,6 +138,36 @@ const UsersPage = () => {
     }
   };
 
+  const [deleteConfirm, setDeleteConfirm] = useState<Profile | null>(null);
+  const [deletingUser, setDeletingUser] = useState(false);
+
+  // Can this role delete the target user?
+  const canDeleteUser = (target: Profile) => {
+    if (target.user_id === user?.user_id) return false; // Can't delete self
+    if (user?.role === 'developer') return true;
+    if (user?.role === 'super_admin' && ['admin', 'teacher', 'student'].includes(target.role)) return true;
+    return false;
+  };
+
+  const handleDeleteUser = async () => {
+    if (!deleteConfirm) return;
+    setDeletingUser(true);
+    try {
+      const uid = deleteConfirm.user_id;
+      // Delete related data
+      await supabase.from('user_roles').delete().eq('user_id', uid);
+      await supabase.from('notifications').delete().eq('user_id', uid);
+      await supabase.from('profiles').delete().eq('user_id', uid);
+      toast.success(`${deleteConfirm.full_name} has been removed`);
+      setDeleteConfirm(null);
+      fetchUsers();
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to delete user');
+    } finally {
+      setDeletingUser(false);
+    }
+  };
+
   // Hide demo users for non-developer roles for professional appearance
   const filteredUsers = users.filter(u => {
     if (!isDeveloper && u.is_demo) return false;
@@ -215,7 +246,8 @@ const UsersPage = () => {
                   <th className="text-left px-6 py-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">User</th>
                   <th className="text-left px-6 py-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Role</th>
                   <th className="text-left px-6 py-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Joined</th>
-                  <th className="text-left px-6 py-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Status</th>
+                   <th className="text-left px-6 py-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Status</th>
+                   <th className="text-left px-6 py-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
@@ -249,14 +281,22 @@ const UsersPage = () => {
                         <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold ${
                           u.is_demo ? 'bg-amber-100 text-amber-700 border border-amber-200' : 'bg-green-100 text-green-700 border border-green-200'
                         }`}>
-                          {u.is_demo ? '🔒 Demo' : '✅ Active'}
+                         {u.is_demo ? '🔒 Demo' : '✅ Active'}
                         </span>
+                      </td>
+                      <td className="px-6 py-4">
+                        {canDeleteUser(u) && (
+                          <button onClick={() => setDeleteConfirm(u)}
+                            className="p-2 rounded-lg text-destructive hover:bg-destructive/10 transition-colors" title="Remove user">
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
                       </td>
                     </tr>
                   );
                 })}
                 {filteredUsers.length === 0 && (
-                  <tr><td colSpan={4} className="px-6 py-12 text-center text-muted-foreground">
+                  <tr><td colSpan={5} className="px-6 py-12 text-center text-muted-foreground">
                     <Users className="w-12 h-12 mx-auto mb-3 opacity-30" /><p>No users found</p>
                   </td></tr>
                 )}
@@ -338,6 +378,37 @@ const UsersPage = () => {
                 className="flex-1 py-2.5 rounded-xl bg-gradient-blue text-white font-medium text-sm hover:opacity-90 disabled:opacity-50 flex items-center justify-center gap-2">
                 {adding ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Plus className="w-4 h-4" />}
                 {adding ? 'Creating...' : 'Create User'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete User Confirmation */}
+      {deleteConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+          <div className="bg-card rounded-2xl shadow-xl border border-border w-full max-w-sm">
+            <div className="p-6 space-y-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-destructive/10 flex items-center justify-center">
+                  <AlertTriangle className="w-5 h-5 text-destructive" />
+                </div>
+                <div>
+                  <h3 className="font-bold">Remove User</h3>
+                  <p className="text-sm text-muted-foreground">{deleteConfirm.full_name}</p>
+                </div>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Are you sure you want to remove <strong>{deleteConfirm.full_name}</strong> ({deleteConfirm.email})?
+                This will delete their profile and role assignment. This action cannot be undone.
+              </p>
+            </div>
+            <div className="flex gap-3 p-6 border-t border-border">
+              <button onClick={() => setDeleteConfirm(null)} className="flex-1 py-2.5 rounded-xl border border-border font-medium text-sm hover:bg-muted">Cancel</button>
+              <button onClick={handleDeleteUser} disabled={deletingUser}
+                className="flex-1 py-2.5 rounded-xl bg-destructive text-destructive-foreground font-medium text-sm hover:opacity-90 disabled:opacity-50 flex items-center justify-center gap-2">
+                {deletingUser ? <div className="w-4 h-4 border-2 border-destructive-foreground border-t-transparent rounded-full animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                {deletingUser ? 'Removing...' : 'Remove User'}
               </button>
             </div>
           </div>

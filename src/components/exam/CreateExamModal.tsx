@@ -28,6 +28,7 @@ const CreateExamModal: React.FC<Props> = ({ onClose, onCreated }) => {
 
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
+  const [topic, setTopic] = useState('');
   const [duration, setDuration] = useState(30);
   const [passPct, setPassPct] = useState(40);
   const [questions, setQuestions] = useState<QuestionDraft[]>([]);
@@ -261,8 +262,9 @@ const CreateExamModal: React.FC<Props> = ({ onClose, onCreated }) => {
         pass_marks: Math.ceil(totalMarks * passPct / 100),
         created_by: user?.user_id,
         school_id: user?.school_id || null,
-        is_active: !needsApproval, // Auto-approve for super_admin/developer
-      }).select().single();
+        is_active: !needsApproval,
+        topic: topic || null,
+      } as any).select().single();
 
       if (examError) throw examError;
 
@@ -362,6 +364,12 @@ const CreateExamModal: React.FC<Props> = ({ onClose, onCreated }) => {
               <div>
                 <label className="text-sm font-medium mb-1.5 block">Exam Title *</label>
                 <input value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g., Chapter 1 - Unit Test"
+                  className="w-full px-3 py-2.5 rounded-xl border border-border bg-background text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none" />
+              </div>
+
+              <div>
+                <label className="text-sm font-medium mb-1.5 block">Topic (optional)</label>
+                <input value={topic} onChange={e => setTopic(e.target.value)} placeholder="e.g. Photosynthesis, Quadratic Equations"
                   className="w-full px-3 py-2.5 rounded-xl border border-border bg-background text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none" />
               </div>
 
