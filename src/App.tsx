@@ -25,6 +25,7 @@ import CertificatesPage from "@/pages/CertificatesPage";
 import StudyPlannerPage from "@/pages/StudyPlannerPage";
 import FeedbackPage from "@/pages/FeedbackPage";
 import AuditLogsPage from "@/pages/AuditLogsPage";
+import ProfilePage from "@/pages/ProfilePage";
 import NotFound from "./pages/NotFound";
 
 const AppRoutes = () => {
@@ -65,6 +66,7 @@ const AppRoutes = () => {
       <Route path="/schools" element={wrap(SchoolsPage, ['developer'])} />
       <Route path="/analytics" element={wrap(AnalyticsPage, ['developer', 'super_admin', 'admin'])} />
       <Route path="/settings" element={wrap(SettingsPage)} />
+      <Route path="/profile" element={wrap(ProfilePage)} />
       <Route path="/calendar" element={wrap(CalendarPage)} />
       <Route path="/announcements" element={wrap(AnnouncementsPage)} />
 

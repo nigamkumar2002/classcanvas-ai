@@ -383,6 +383,37 @@ const UsersPage = () => {
           </div>
         </div>
       )}
+
+      {/* Delete User Confirmation */}
+      {deleteConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+          <div className="bg-card rounded-2xl shadow-xl border border-border w-full max-w-sm">
+            <div className="p-6 space-y-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-destructive/10 flex items-center justify-center">
+                  <AlertTriangle className="w-5 h-5 text-destructive" />
+                </div>
+                <div>
+                  <h3 className="font-bold">Remove User</h3>
+                  <p className="text-sm text-muted-foreground">{deleteConfirm.full_name}</p>
+                </div>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Are you sure you want to remove <strong>{deleteConfirm.full_name}</strong> ({deleteConfirm.email})?
+                This will delete their profile and role assignment. This action cannot be undone.
+              </p>
+            </div>
+            <div className="flex gap-3 p-6 border-t border-border">
+              <button onClick={() => setDeleteConfirm(null)} className="flex-1 py-2.5 rounded-xl border border-border font-medium text-sm hover:bg-muted">Cancel</button>
+              <button onClick={handleDeleteUser} disabled={deletingUser}
+                className="flex-1 py-2.5 rounded-xl bg-destructive text-destructive-foreground font-medium text-sm hover:opacity-90 disabled:opacity-50 flex items-center justify-center gap-2">
+                {deletingUser ? <div className="w-4 h-4 border-2 border-destructive-foreground border-t-transparent rounded-full animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                {deletingUser ? 'Removing...' : 'Remove User'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
