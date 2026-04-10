@@ -368,6 +368,12 @@ const CreateExamModal: React.FC<Props> = ({ onClose, onCreated }) => {
               </div>
 
               <div>
+                <label className="text-sm font-medium mb-1.5 block">Topic (optional)</label>
+                <input value={topic} onChange={e => setTopic(e.target.value)} placeholder="e.g. Photosynthesis, Quadratic Equations"
+                  className="w-full px-3 py-2.5 rounded-xl border border-border bg-background text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none" />
+              </div>
+
+              <div>
                 <label className="text-sm font-medium mb-1.5 block">Description</label>
                 <textarea value={description} onChange={e => setDescription(e.target.value)} rows={2} placeholder="Optional description..."
                   className="w-full px-3 py-2.5 rounded-xl border border-border bg-background text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none resize-none" />
