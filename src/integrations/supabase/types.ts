@@ -887,41 +887,53 @@ export type Database = {
       }
       profiles: {
         Row: {
+          admission_no: string | null
           avatar_url: string | null
           class_id: string | null
           created_at: string
+          date_of_birth: string | null
           email: string
           full_name: string
           id: string
           is_demo: boolean
           role: Database["public"]["Enums"]["app_role"]
+          roll_no: string | null
           school_id: string | null
+          section: string | null
           updated_at: string
           user_id: string
         }
         Insert: {
+          admission_no?: string | null
           avatar_url?: string | null
           class_id?: string | null
           created_at?: string
+          date_of_birth?: string | null
           email: string
           full_name: string
           id?: string
           is_demo?: boolean
           role?: Database["public"]["Enums"]["app_role"]
+          roll_no?: string | null
           school_id?: string | null
+          section?: string | null
           updated_at?: string
           user_id: string
         }
         Update: {
+          admission_no?: string | null
           avatar_url?: string | null
           class_id?: string | null
           created_at?: string
+          date_of_birth?: string | null
           email?: string
           full_name?: string
           id?: string
           is_demo?: boolean
           role?: Database["public"]["Enums"]["app_role"]
+          roll_no?: string | null
           school_id?: string | null
+          section?: string | null
           updated_at?: string
           user_id?: string
         }
