@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { School, BookOpen, Users, GraduationCap, FileText, Plus, X, Trash2, AlertTriangle } from 'lucide-react';
+import { toast } from 'sonner';
 
 interface SchoolItem {
   id: string; name: string; code: string; description?: string;
@@ -75,35 +76,19 @@ const SchoolsPage = () => {
     if (!deleteConfirm || deleteTyped !== 'DELETE') return;
     setDeleting(true);
     try {
-      const schoolId = deleteConfirm.id;
-      // Delete in order: exam_results, questions, exams, materials, chapters, subjects, classes, 
-      // content_approvals, attendance, grades, certificates, fee_records, feedback, 
-      // study_plans, messages, notifications, announcements, schedules, audit_logs,
-      // live_session_participants (via live_sessions), live_sessions, assignment_submissions, profiles, user_roles
-      const tables = [
-        'exam_results', 'questions', 'exams', 'materials', 'chapters', 'subjects', 'classes',
-        'content_approvals', 'attendance', 'grades', 'certificates', 'fee_records', 'feedback',
-        'study_plans', 'announcements', 'schedules', 'audit_logs', 'live_sessions', 'assignment_submissions',
-      ];
-      for (const table of tables) {
-        await (supabase.from(table as any).delete() as any).eq('school_id', schoolId);
-      }
-      // Delete profiles and user_roles for this school's users
-      const { data: schoolProfiles } = await supabase.from('profiles').select('user_id').eq('school_id', schoolId);
-      if (schoolProfiles && schoolProfiles.length > 0) {
-        const userIds = schoolProfiles.map(p => p.user_id);
-        await supabase.from('user_roles').delete().in('user_id', userIds);
-        await supabase.from('notifications').delete().in('user_id', userIds);
-        await supabase.from('messages').delete().in('sender_id', userIds);
-        await supabase.from('profiles').delete().eq('school_id', schoolId);
-      }
-      // Finally delete the school
-      await supabase.from('schools').delete().eq('id', schoolId);
+      const { data, error } = await supabase.functions.invoke('delete-school', {
+        body: { school_id: deleteConfirm.id },
+      });
+
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+
       setDeleteConfirm(null);
       setDeleteTyped('');
+      toast.success(`${deleteConfirm.name} and all related school data were deleted`);
       fetchSchools();
     } catch (err: any) {
-      console.error('Delete error:', err);
+      toast.error(err.message || 'Failed to delete school');
     } finally {
       setDeleting(false);
     }

@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
-import { Users, Plus, Search, Mail, Shield, GraduationCap, BookOpen, UserCheck, X, Eye, EyeOff, School, Trash2, AlertTriangle } from 'lucide-react';
+import { Users, Plus, Search, Mail, Shield, GraduationCap, BookOpen, UserCheck, X, Eye, EyeOff, School, Trash2, AlertTriangle, Upload } from 'lucide-react';
 import { toast } from 'sonner';
+import BulkStudentImportModal from '@/components/users/BulkStudentImportModal';
 
 interface Profile {
   id: string; user_id: string; full_name: string; email: string;
@@ -33,9 +34,11 @@ const UsersPage = () => {
   const [addError, setAddError] = useState('');
   const [addSuccess, setAddSuccess] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [showBulkImport, setShowBulkImport] = useState(false);
 
   const myRole = user?.role || 'student';
   const isDeveloper = myRole === 'developer';
+  const canBulkImport = myRole === 'super_admin' || myRole === 'developer';
 
   const creatableRoles: Record<string, string[]> = {
     developer: ['super_admin', 'admin', 'teacher', 'student'],
@@ -153,14 +156,16 @@ const UsersPage = () => {
     if (!deleteConfirm) return;
     setDeletingUser(true);
     try {
-      const uid = deleteConfirm.user_id;
-      // Delete related data
-      await supabase.from('user_roles').delete().eq('user_id', uid);
-      await supabase.from('notifications').delete().eq('user_id', uid);
-      await supabase.from('profiles').delete().eq('user_id', uid);
+      const { data, error } = await supabase.functions.invoke('delete-user', {
+        body: { target_user_id: deleteConfirm.user_id },
+      });
+
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+
       toast.success(`${deleteConfirm.full_name} has been removed`);
+      setUsers(prev => prev.filter(item => item.user_id !== deleteConfirm.user_id));
       setDeleteConfirm(null);
-      fetchUsers();
     } catch (err: any) {
       toast.error(err.message || 'Failed to delete user');
     } finally {
@@ -189,12 +194,20 @@ const UsersPage = () => {
           <h1 className="text-2xl font-bold">User Management</h1>
           <p className="text-muted-foreground text-sm mt-1">{users.length} total users</p>
         </div>
-        {canCreate.length > 0 && (
-          <button onClick={() => { setShowAdd(true); setAddError(''); setAddSuccess(''); setForm(f => ({ ...f, role: canCreate[0] || 'student' })); }}
-            className="flex items-center gap-2 px-4 py-2 bg-gradient-blue text-white rounded-xl font-medium text-sm shadow-glow-blue hover:opacity-90 transition-all">
-            <Plus className="w-4 h-4" /> Add User
-          </button>
-        )}
+        <div className="flex items-center gap-3">
+          {canBulkImport && (
+            <button onClick={() => setShowBulkImport(true)}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl border border-border bg-background font-medium text-sm hover:bg-muted transition-all">
+              <Upload className="w-4 h-4" /> Bulk Import Students
+            </button>
+          )}
+          {canCreate.length > 0 && (
+            <button onClick={() => { setShowAdd(true); setAddError(''); setAddSuccess(''); setForm(f => ({ ...f, role: canCreate[0] || 'student' })); }}
+              className="flex items-center gap-2 px-4 py-2 bg-gradient-blue text-white rounded-xl font-medium text-sm shadow-glow-blue hover:opacity-90 transition-all">
+              <Plus className="w-4 h-4" /> Add User
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -382,6 +395,17 @@ const UsersPage = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {showBulkImport && (
+        <BulkStudentImportModal
+          schools={schools}
+          onClose={() => setShowBulkImport(false)}
+          onSuccess={() => {
+            setShowBulkImport(false);
+            fetchUsers();
+          }}
+        />
       )}
 
       {/* Delete User Confirmation */}

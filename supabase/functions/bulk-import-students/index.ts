@@ -30,10 +30,11 @@ const json = (body: Record<string, unknown>, status = 200) =>
 
 const normalizeAdmissionNo = (value: string) => value.trim().replace(/\s+/g, '').replace(/\.0$/, '').toUpperCase();
 
-const buildSchoolHandle = (schoolCode?: string | null, schoolName?: string | null) =>
-  String(schoolCode || schoolName || 'school')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '');
+const buildSchoolHandle = (schoolCode?: string | null, schoolName?: string | null) => {
+  const source = String(schoolCode || schoolName || 'school').trim().toLowerCase();
+  const firstToken = source.split(/[^a-z0-9]+/).filter(Boolean)[0] || 'school';
+  return firstToken.replace(/[^a-z0-9]+/g, '');
+};
 
 const generateStudentEmail = (admissionNo: string, schoolCode?: string | null, schoolName?: string | null) =>
   `${normalizeAdmissionNo(admissionNo).toLowerCase()}@${buildSchoolHandle(schoolCode, schoolName)}.com`;

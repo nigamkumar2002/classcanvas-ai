@@ -25,6 +25,8 @@ const ROLE_MENUS: Record<string, { label: string; icon: React.ElementType; path:
   ],
   super_admin: [
     { label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
+    { label: 'Classes', icon: BookOpen, path: '/classes' },
+    { label: 'Content', icon: FileText, path: '/content' },
     { label: 'Schools', icon: School, path: '/schools' },
     { label: 'All Users', icon: Users, path: '/users' },
     { label: 'Approvals', icon: CheckSquare, path: '/approvals' },
@@ -33,6 +35,7 @@ const ROLE_MENUS: Record<string, { label: string; icon: React.ElementType; path:
     { label: 'Fees', icon: DollarSign, path: '/fees' },
     { label: 'Messages', icon: MessageSquare, path: '/messages' },
     { label: 'Certificates', icon: Award, path: '/certificates' },
+    { label: 'Calendar', icon: Calendar, path: '/calendar' },
     { label: 'Announcements', icon: Megaphone, path: '/announcements' },
     { label: 'Analytics', icon: BarChart3, path: '/analytics' },
     { label: 'Feedback', icon: Star, path: '/feedback' },

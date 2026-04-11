@@ -2,10 +2,13 @@ const NON_ALPHANUMERIC = /[^a-z0-9]+/g;
 
 const pad = (value: number) => String(value).padStart(2, '0');
 
-const toSchoolHandle = (value?: string | null) =>
-  String(value ?? '')
-    .toLowerCase()
-    .replace(NON_ALPHANUMERIC, '');
+const toSchoolHandle = (value?: string | null) => {
+  const normalized = String(value ?? '').trim().toLowerCase();
+  if (!normalized) return '';
+
+  const firstToken = normalized.split(/[^a-z0-9]+/).filter(Boolean)[0] || '';
+  return firstToken.replace(NON_ALPHANUMERIC, '');
+};
 
 export const normalizeAdmissionNo = (value: unknown) =>
   String(value ?? '')
