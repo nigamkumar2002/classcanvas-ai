@@ -1061,6 +1061,33 @@ export type Database = {
           },
         ]
       }
+      school_settings: {
+        Row: {
+          id: string
+          key: string
+          school_id: string
+          updated_at: string
+          updated_by: string | null
+          value: Json
+        }
+        Insert: {
+          id?: string
+          key: string
+          school_id: string
+          updated_at?: string
+          updated_by?: string | null
+          value?: Json
+        }
+        Update: {
+          id?: string
+          key?: string
+          school_id?: string
+          updated_at?: string
+          updated_by?: string | null
+          value?: Json
+        }
+        Relationships: []
+      }
       schools: {
         Row: {
           address: string | null
