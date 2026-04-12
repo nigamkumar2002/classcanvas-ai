@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
-import { User, Lock, Save, Eye, EyeOff, CheckCircle } from 'lucide-react';
+import { User, Lock, Save, Eye, EyeOff, ShieldCheck } from 'lucide-react';
 import { toast } from 'sonner';
 
 const ProfilePage = () => {
@@ -15,7 +15,54 @@ const ProfilePage = () => {
   const [savingProfile, setSavingProfile] = useState(false);
   const [changingPw, setChangingPw] = useState(false);
 
+  // Content approval toggle for super_admin
+  const [approvalRequired, setApprovalRequired] = useState(true);
+  const [loadingApproval, setLoadingApproval] = useState(false);
+  const isSuperAdmin = user?.role === 'super_admin';
   const isDemo = user?.is_demo ?? false;
+
+  useEffect(() => {
+    if (!isSuperAdmin || !user?.school_id) return;
+    const load = async () => {
+      const { data } = await (supabase as any)
+        .from('school_settings')
+        .select('value')
+        .eq('school_id', user.school_id)
+        .eq('key', 'require_content_approval')
+        .single();
+      if (data) {
+        setApprovalRequired(data.value === true || data.value === 'true');
+      }
+    };
+    load();
+  }, [isSuperAdmin, user?.school_id]);
+
+  const toggleApproval = async () => {
+    if (!user?.school_id) return;
+    setLoadingApproval(true);
+    const newValue = !approvalRequired;
+    
+    // Upsert the setting
+    const { error } = await (supabase as any)
+      .from('school_settings')
+      .upsert({
+        school_id: user.school_id,
+        key: 'require_content_approval',
+        value: newValue,
+        updated_by: user.user_id,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'school_id,key' });
+    
+    if (error) {
+      toast.error('Failed to update approval setting');
+    } else {
+      setApprovalRequired(newValue);
+      toast.success(newValue 
+        ? 'Content approval is now required for teachers and admins' 
+        : 'Content approval is now disabled — all content will be published automatically');
+    }
+    setLoadingApproval(false);
+  };
 
   const handleSaveProfile = async () => {
     if (!fullName.trim()) { toast.error('Name cannot be empty'); return; }
@@ -41,14 +88,12 @@ const ProfilePage = () => {
 
     setChangingPw(true);
     try {
-      // Verify old password by re-signing in
       const { error: signInError } = await supabase.auth.signInWithPassword({
         email: user?.email || '',
         password: oldPassword,
       });
       if (signInError) { toast.error('Current password is incorrect'); setChangingPw(false); return; }
 
-      // Update password
       const { error } = await supabase.auth.updateUser({ password: newPassword });
       if (error) throw error;
 
@@ -115,6 +160,38 @@ const ProfilePage = () => {
           )}
         </div>
       </div>
+
+      {/* Content Approval Toggle - Super Admin only */}
+      {isSuperAdmin && (
+        <div className="bg-card rounded-2xl border border-border shadow-card p-6">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center">
+              <ShieldCheck className="w-4 h-4 text-white" />
+            </div>
+            <h2 className="font-bold">Content Approval</h2>
+          </div>
+          <div className="flex items-center justify-between p-4 rounded-xl bg-muted/30 border border-border/50">
+            <div>
+              <p className="font-medium text-sm">Require approval for teacher/admin content</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                {approvalRequired 
+                  ? 'When enabled, teachers and admins must submit new content for approval before it becomes visible.'
+                  : 'When disabled, new school content is published automatically.'}
+              </p>
+            </div>
+            <button
+              onClick={toggleApproval}
+              disabled={loadingApproval}
+              className={`relative w-11 h-6 rounded-full transition-colors disabled:opacity-50 ${approvalRequired ? 'bg-primary' : 'bg-muted-foreground/30'}`}
+            >
+              <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${approvalRequired ? 'translate-x-5' : 'translate-x-0'}`} />
+            </button>
+          </div>
+          <p className="text-xs text-muted-foreground mt-3 px-1">
+            💡 Turn this off when you want teachers to upload bulk content without waiting for approval. Turn it back on when you want to review new submissions.
+          </p>
+        </div>
+      )}
 
       {/* Change Password */}
       <div className="bg-card rounded-2xl border border-border shadow-card p-6">

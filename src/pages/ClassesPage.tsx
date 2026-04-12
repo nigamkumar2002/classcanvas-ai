@@ -1,9 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import {
   Plus, ChevronDown, ChevronRight, BookOpen, FileText,
-  Upload, Video, ClipboardList, FileQuestion, BookMarked, GraduationCap, X, Clock, ShieldCheck
+  Upload, Video, ClipboardList, FileQuestion, BookMarked, GraduationCap, X, Clock, ShieldCheck,
+  Pencil, Trash2, Search
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import ContentUploadModal from '@/components/ContentUploadModal';
@@ -11,7 +12,7 @@ import PDFViewerModal from '@/components/PDFViewerModal';
 import { toast } from '@/hooks/use-toast';
 
 interface Class { id: string; name: string; description: string; grade_level: number; is_active: boolean; }
-interface Subject { id: string; class_id: string; name: string; description: string; color: string; is_active?: boolean; }
+interface Subject { id: string; class_id: string; name: string; description: string; color: string; is_active?: boolean; teacher_id?: string; }
 interface Chapter { id: string; subject_id: string; name: string; description: string; order_index: number; is_active?: boolean; }
 interface Material { id: string; chapter_id: string; title: string; type: string; file_url?: string; file_type?: string; is_active: boolean; }
 
@@ -25,6 +26,13 @@ const TYPE_CONFIG: Record<string, { label: string; icon: React.ElementType }> = 
 };
 
 const SUBJECT_COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#06B6D4', '#84CC16'];
+
+const GRADE_OPTIONS = [
+  { value: -3, label: 'Nursery' },
+  { value: -2, label: 'LKG' },
+  { value: -1, label: 'UKG' },
+  ...Array.from({ length: 12 }, (_, i) => ({ value: i + 1, label: `Grade ${i + 1}` })),
+];
 
 const ClassesPage = () => {
   const { user } = useAuth();
@@ -43,6 +51,11 @@ const ClassesPage = () => {
   const [addSubjectModal, setAddSubjectModal] = useState<{ open: boolean; classId?: string }>({ open: false });
   const [addChapterModal, setAddChapterModal] = useState<{ open: boolean; subjectId?: string }>({ open: false });
 
+  // Edit states
+  const [editClassModal, setEditClassModal] = useState<{ open: boolean; cls?: Class }>({ open: false });
+  const [editSubjectModal, setEditSubjectModal] = useState<{ open: boolean; sub?: Subject; classId?: string }>({ open: false });
+  const [editChapterModal, setEditChapterModal] = useState<{ open: boolean; chp?: Chapter; subjectId?: string }>({ open: false });
+
   const [className, setClassName] = useState('');
   const [classDesc, setClassDesc] = useState('');
   const [classGrade, setClassGrade] = useState('');
@@ -53,11 +66,33 @@ const ClassesPage = () => {
   const [formLoading, setFormLoading] = useState(false);
   const [formError, setFormError] = useState('');
 
+  // Approval toggle
+  const [approvalRequired, setApprovalRequired] = useState(true);
+
   const canEdit = user?.role === 'admin' || user?.role === 'super_admin' || user?.role === 'teacher' || user?.role === 'developer';
+  const canDelete = user?.role === 'admin' || user?.role === 'super_admin' || user?.role === 'developer';
   const isStudent = user?.role === 'student';
-  
-  // Teachers/admins need approval; super_admin/developer content is auto-published
-  const needsApproval = user?.role === 'teacher' || user?.role === 'admin';
+  const isSuperAdminOrDev = user?.role === 'super_admin' || user?.role === 'developer';
+
+  // Dynamic approval check: if approval is disabled by super admin, no one needs approval
+  const needsApproval = approvalRequired && (user?.role === 'teacher' || user?.role === 'admin');
+
+  // Load approval setting
+  useEffect(() => {
+    if (!user?.school_id) return;
+    const loadSetting = async () => {
+      const { data } = await (supabase as any)
+        .from('school_settings')
+        .select('value')
+        .eq('school_id', user.school_id)
+        .eq('key', 'require_content_approval')
+        .single();
+      if (data) {
+        setApprovalRequired(data.value === true || data.value === 'true');
+      }
+    };
+    loadSetting();
+  }, [user?.school_id]);
 
   const fetchAll = async () => {
     try {
@@ -70,8 +105,6 @@ const ClassesPage = () => {
       setClasses((cls as Class[]) || []);
       setSubjects((subs as Subject[]) || []);
       setChapters((chps as Chapter[]) || []);
-      // For students, only show active/approved materials
-      // For editors, show all materials (they can see pending ones)
       setMaterials((mats as Material[]) || []);
     } catch (error) {
       console.error('Error fetching data:', error);
@@ -95,6 +128,9 @@ const ClassesPage = () => {
       submitted_by: user.user_id, school_id: user.school_id,
     } as any);
   };
+
+  // Count unique subject names across all classes
+  const uniqueSubjectNames = new Set(subjects.map(s => s.name.trim().toLowerCase()));
 
   const handleCreateClass = async () => {
     if (!className.trim()) { setFormError('Class name required'); return; }
@@ -154,10 +190,15 @@ const ClassesPage = () => {
     if (!user?.school_id) { setFormError('Your account is not assigned to a school.'); return; }
     setFormLoading(true); setFormError('');
     
+    // Auto-assign order_index based on existing chapters
+    const existingChapters = chapters.filter(c => c.subject_id === addChapterModal.subjectId);
+    const maxOrder = existingChapters.length > 0 ? Math.max(...existingChapters.map(c => c.order_index || 0)) : 0;
+    
     const { data, error } = await supabase.from('chapters').insert({
       subject_id: addChapterModal.subjectId,
       name: chapterName.trim(),
       description: chapterDesc.trim() || null,
+      order_index: maxOrder + 1,
       school_id: user.school_id,
       is_active: !needsApproval,
     } as any).select().single();
@@ -175,7 +216,85 @@ const ClassesPage = () => {
     setFormLoading(false);
   };
 
-  // Filter what students see - only active content
+  // Edit handlers
+  const handleEditClass = async () => {
+    if (!className.trim() || !editClassModal.cls) return;
+    setFormLoading(true); setFormError('');
+    const { error } = await supabase.from('classes').update({
+      name: className.trim(), description: classDesc.trim() || null,
+      grade_level: classGrade ? parseInt(classGrade) : null,
+    }).eq('id', editClassModal.cls.id);
+    if (error) { setFormError(error.message); } else {
+      toast({ title: 'Class Updated' }); setEditClassModal({ open: false }); fetchAll();
+    }
+    setFormLoading(false);
+  };
+
+  const handleEditSubject = async () => {
+    if (!subjectName.trim() || !editSubjectModal.sub) return;
+    setFormLoading(true); setFormError('');
+    const { error } = await supabase.from('subjects').update({
+      name: subjectName.trim(), color: subjectColor,
+    }).eq('id', editSubjectModal.sub.id);
+    if (error) { setFormError(error.message); } else {
+      toast({ title: 'Subject Updated' }); setEditSubjectModal({ open: false }); fetchAll();
+    }
+    setFormLoading(false);
+  };
+
+  const handleEditChapter = async () => {
+    if (!chapterName.trim() || !editChapterModal.chp) return;
+    setFormLoading(true); setFormError('');
+    const { error } = await supabase.from('chapters').update({
+      name: chapterName.trim(), description: chapterDesc.trim() || null,
+    }).eq('id', editChapterModal.chp.id);
+    if (error) { setFormError(error.message); } else {
+      toast({ title: 'Chapter Updated' }); setEditChapterModal({ open: false }); fetchAll();
+    }
+    setFormLoading(false);
+  };
+
+  // Delete handlers
+  const handleDeleteClass = async (id: string, name: string) => {
+    if (!confirm(`Delete class "${name}" and all its subjects, chapters, and materials?`)) return;
+    const { error } = await supabase.from('classes').delete().eq('id', id);
+    if (error) { toast({ title: 'Error', description: error.message, variant: 'destructive' }); } else {
+      toast({ title: 'Class Deleted' }); fetchAll();
+    }
+  };
+
+  const handleDeleteSubject = async (id: string, name: string) => {
+    if (!confirm(`Delete subject "${name}" and all its chapters and materials?`)) return;
+    // Delete chapters and materials first
+    const subChapters = chapters.filter(c => c.subject_id === id);
+    for (const ch of subChapters) {
+      await supabase.from('materials').delete().eq('chapter_id', ch.id);
+    }
+    await supabase.from('chapters').delete().eq('subject_id', id);
+    const { error } = await supabase.from('subjects').delete().eq('id', id);
+    if (error) { toast({ title: 'Error', description: error.message, variant: 'destructive' }); } else {
+      toast({ title: 'Subject Deleted' }); fetchAll();
+    }
+  };
+
+  const handleDeleteChapter = async (id: string, name: string) => {
+    if (!confirm(`Delete chapter "${name}" and all its materials?`)) return;
+    await supabase.from('materials').delete().eq('chapter_id', id);
+    const { error } = await supabase.from('chapters').delete().eq('id', id);
+    if (error) { toast({ title: 'Error', description: error.message, variant: 'destructive' }); } else {
+      toast({ title: 'Chapter Deleted' }); fetchAll();
+    }
+  };
+
+  const handleDeleteMaterial = async (id: string, title: string) => {
+    if (!confirm(`Delete material "${title}"?`)) return;
+    const { error } = await supabase.from('materials').delete().eq('id', id);
+    if (error) { toast({ title: 'Error', description: error.message, variant: 'destructive' }); } else {
+      toast({ title: 'Material Deleted' }); fetchAll();
+    }
+  };
+
+  // Filter what students see
   const visibleClasses = isStudent ? classes.filter(c => c.is_active !== false) : classes;
   const visibleChapters = isStudent ? chapters.filter(c => c.is_active !== false) : chapters;
   const visibleMaterials = isStudent ? materials.filter(m => m.is_active !== false) : materials;
@@ -191,17 +310,18 @@ const ClassesPage = () => {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">{isStudent ? 'My Classes' : 'Classes & Content'}</h1>
-          <p className="text-muted-foreground text-sm mt-1">{visibleClasses.length} classes · {subjects.length} subjects · {visibleChapters.length} chapters</p>
+          <p className="text-muted-foreground text-sm mt-1">
+            {visibleClasses.length} classes · {uniqueSubjectNames.size} unique subjects · {visibleChapters.length} chapters
+          </p>
         </div>
         {canEdit && (
-          <button onClick={() => { setAddClassModal(true); setFormError(''); }}
+          <button onClick={() => { setAddClassModal(true); setFormError(''); setClassName(''); setClassDesc(''); setClassGrade(''); }}
             className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-xl font-medium text-sm hover:opacity-90 transition-all">
             <Plus className="w-4 h-4" /> Add Class
           </button>
         )}
       </div>
 
-      {/* Approval notice for teachers/admins */}
       {needsApproval && (
         <div className="flex items-start gap-3 p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-sm">
           <Clock className="w-5 h-5 flex-shrink-0 mt-0.5" />
@@ -243,10 +363,24 @@ const ClassesPage = () => {
                   {isClassOpen ? <ChevronDown className="w-5 h-5 text-muted-foreground flex-shrink-0" /> : <ChevronRight className="w-5 h-5 text-muted-foreground flex-shrink-0" />}
                 </button>
                 {canEdit && !isPending && (
-                  <button onClick={() => { setAddSubjectModal({ open: true, classId: cls.id }); setFormError(''); }}
-                    className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium text-emerald-600 hover:bg-emerald-50 transition-colors">
-                    <Plus className="w-3 h-3" /> Subject
-                  </button>
+                  <div className="flex items-center gap-1 flex-shrink-0">
+                    <button onClick={() => {
+                      setEditClassModal({ open: true, cls });
+                      setClassName(cls.name); setClassDesc(cls.description || ''); setClassGrade(cls.grade_level?.toString() || ''); setFormError('');
+                    }} className="px-2 py-1 rounded-lg text-xs font-medium text-muted-foreground hover:bg-muted transition-colors">
+                      <Pencil className="w-3 h-3 inline mr-1" />Edit
+                    </button>
+                    {canDelete && (
+                      <button onClick={() => handleDeleteClass(cls.id, cls.name)}
+                        className="px-2 py-1 rounded-lg text-xs font-medium text-destructive hover:bg-destructive/10 transition-colors">
+                        <Trash2 className="w-3 h-3 inline mr-1" />Delete
+                      </button>
+                    )}
+                    <button onClick={() => { setAddSubjectModal({ open: true, classId: cls.id }); setFormError(''); setSubjectName(''); setSubjectColor(SUBJECT_COLORS[0]); }}
+                      className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium text-emerald-600 hover:bg-emerald-50 transition-colors">
+                      <Plus className="w-3 h-3" /> Subject
+                    </button>
+                  </div>
                 )}
               </div>
 
@@ -255,7 +389,7 @@ const ClassesPage = () => {
                   {classSubjects.length === 0 ? (
                     <div className="p-4 pl-8 text-muted-foreground text-sm">No subjects yet.</div>
                   ) : classSubjects.map(sub => {
-                    const subChapters = visibleChapters.filter(c => c.subject_id === sub.id);
+                    const subChapters = visibleChapters.filter(c => c.subject_id === sub.id).sort((a, b) => (a.order_index || 0) - (b.order_index || 0));
                     const isSubOpen = expandedSubjects.has(sub.id);
 
                     return (
@@ -270,10 +404,24 @@ const ClassesPage = () => {
                             {isSubOpen ? <ChevronDown className="w-4 h-4 text-muted-foreground" /> : <ChevronRight className="w-4 h-4 text-muted-foreground" />}
                           </button>
                           {canEdit && (
-                            <button onClick={() => { setAddChapterModal({ open: true, subjectId: sub.id }); setFormError(''); }}
-                              className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium text-blue-600 hover:bg-blue-50 transition-colors">
-                              <Plus className="w-3 h-3" /> Chapter
-                            </button>
+                            <div className="flex items-center gap-1 flex-shrink-0">
+                              <button onClick={() => {
+                                setEditSubjectModal({ open: true, sub, classId: sub.class_id });
+                                setSubjectName(sub.name); setSubjectColor(sub.color || SUBJECT_COLORS[0]); setFormError('');
+                              }} className="px-2 py-1 rounded-lg text-xs font-medium text-muted-foreground hover:bg-muted transition-colors">
+                                <Pencil className="w-3 h-3 inline mr-1" />Edit
+                              </button>
+                              {canDelete && (
+                                <button onClick={() => handleDeleteSubject(sub.id, sub.name)}
+                                  className="px-2 py-1 rounded-lg text-xs font-medium text-destructive hover:bg-destructive/10 transition-colors">
+                                  <Trash2 className="w-3 h-3 inline mr-1" />Delete
+                                </button>
+                              )}
+                              <button onClick={() => { setAddChapterModal({ open: true, subjectId: sub.id }); setFormError(''); setChapterName(''); setChapterDesc(''); }}
+                                className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium text-blue-600 hover:bg-blue-50 transition-colors">
+                                <Plus className="w-3 h-3" /> Chapter
+                              </button>
+                            </div>
                           )}
                         </div>
 
@@ -281,7 +429,7 @@ const ClassesPage = () => {
                           <div>
                             {subChapters.length === 0 ? (
                               <div className="pl-14 p-3 text-xs text-muted-foreground">No chapters yet.</div>
-                            ) : subChapters.map(chp => {
+                            ) : subChapters.map((chp, idx) => {
                               const chpMaterials = visibleMaterials.filter(m => m.chapter_id === chp.id);
                               const isChpOpen = expandedChapters.has(chp.id);
                               const chpPending = chp.is_active === false;
@@ -290,6 +438,7 @@ const ClassesPage = () => {
                                 <div key={chp.id}>
                                   <div className="flex items-center gap-2 p-2.5 pl-14 hover:bg-muted/10 transition-colors">
                                     <button onClick={() => setExpandedChapters(toggle(expandedChapters, chp.id))} className="flex items-center gap-2 flex-1 text-left min-w-0">
+                                      <span className="text-xs text-muted-foreground font-mono w-5 text-right flex-shrink-0">{idx + 1}.</span>
                                       <FileText className="w-4 h-4 text-muted-foreground flex-shrink-0" />
                                       <span className="text-sm font-medium">{chp.name}</span>
                                       <span className="text-xs text-muted-foreground">({chpMaterials.length})</span>
@@ -298,10 +447,24 @@ const ClassesPage = () => {
                                       )}
                                     </button>
                                     {canEdit && !chpPending && (
-                                      <button onClick={() => setUploadModal({ open: true, chapterId: chp.id })}
-                                        className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium text-primary hover:bg-primary/10 transition-colors">
-                                        <Upload className="w-3 h-3" /> Upload
-                                      </button>
+                                      <div className="flex items-center gap-1 flex-shrink-0">
+                                        <button onClick={() => {
+                                          setEditChapterModal({ open: true, chp, subjectId: chp.subject_id });
+                                          setChapterName(chp.name); setChapterDesc(chp.description || ''); setFormError('');
+                                        }} className="px-1.5 py-0.5 rounded text-xs text-muted-foreground hover:bg-muted">
+                                          <Pencil className="w-3 h-3" />
+                                        </button>
+                                        {canDelete && (
+                                          <button onClick={() => handleDeleteChapter(chp.id, chp.name)}
+                                            className="px-1.5 py-0.5 rounded text-xs text-destructive hover:bg-destructive/10">
+                                            <Trash2 className="w-3 h-3" />
+                                          </button>
+                                        )}
+                                        <button onClick={() => setUploadModal({ open: true, chapterId: chp.id })}
+                                          className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium text-primary hover:bg-primary/10 transition-colors">
+                                          <Upload className="w-3 h-3" /> Upload
+                                        </button>
+                                      </div>
                                     )}
                                   </div>
 
@@ -319,6 +482,12 @@ const ClassesPage = () => {
                                               <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-amber-100 text-amber-700">Pending</span>
                                             )}
                                             <span className="text-[10px] text-muted-foreground capitalize">{mat.type?.replace('_', ' ')}</span>
+                                            {canDelete && (
+                                              <button onClick={() => handleDeleteMaterial(mat.id, mat.title)}
+                                                className="opacity-0 group-hover:opacity-100 px-1 py-0.5 rounded text-xs text-destructive hover:bg-destructive/10">
+                                                <Trash2 className="w-3 h-3" />
+                                              </button>
+                                            )}
                                           </div>
                                         );
                                       })}
@@ -377,7 +546,7 @@ const ClassesPage = () => {
                 <select value={classGrade} onChange={e => setClassGrade(e.target.value)}
                   className="w-full px-4 py-2.5 rounded-xl border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 text-sm">
                   <option value="">Select grade...</option>
-                  {Array.from({ length: 12 }, (_, i) => i + 1).map(g => <option key={g} value={g}>Grade {g}</option>)}
+                  {GRADE_OPTIONS.map(g => <option key={g.value} value={g.value}>{g.label}</option>)}
                 </select>
               </div>
             </div>
@@ -386,6 +555,46 @@ const ClassesPage = () => {
               <button onClick={handleCreateClass} disabled={formLoading}
                 className="flex-1 py-2.5 rounded-xl bg-primary text-primary-foreground font-medium text-sm hover:opacity-90 disabled:opacity-50 flex items-center justify-center gap-2">
                 {formLoading ? 'Creating...' : needsApproval ? <><Clock className="w-4 h-4" /> Submit for Approval</> : 'Create Class'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Class Modal */}
+      {editClassModal.open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+          <div className="bg-card rounded-2xl shadow-xl border border-border w-full max-w-md">
+            <div className="flex items-center justify-between p-6 border-b border-border">
+              <h2 className="text-lg font-bold">Edit Class</h2>
+              <button onClick={() => setEditClassModal({ open: false })} className="p-2 rounded-xl hover:bg-muted"><X className="w-5 h-5" /></button>
+            </div>
+            <div className="p-6 space-y-4">
+              {formError && <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-sm">{formError}</div>}
+              <div>
+                <label className="text-sm font-semibold mb-1.5 block">Class Name *</label>
+                <input value={className} onChange={e => setClassName(e.target.value)}
+                  className="w-full px-4 py-2.5 rounded-xl border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 text-sm" />
+              </div>
+              <div>
+                <label className="text-sm font-semibold mb-1.5 block">Description</label>
+                <textarea value={classDesc} onChange={e => setClassDesc(e.target.value)} rows={2}
+                  className="w-full px-4 py-2.5 rounded-xl border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 text-sm resize-none" />
+              </div>
+              <div>
+                <label className="text-sm font-semibold mb-1.5 block">Grade Level</label>
+                <select value={classGrade} onChange={e => setClassGrade(e.target.value)}
+                  className="w-full px-4 py-2.5 rounded-xl border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 text-sm">
+                  <option value="">Select grade...</option>
+                  {GRADE_OPTIONS.map(g => <option key={g.value} value={g.value}>{g.label}</option>)}
+                </select>
+              </div>
+            </div>
+            <div className="flex gap-3 p-6 border-t border-border">
+              <button onClick={() => setEditClassModal({ open: false })} className="flex-1 py-2.5 rounded-xl border border-border font-medium text-sm hover:bg-muted">Cancel</button>
+              <button onClick={handleEditClass} disabled={formLoading}
+                className="flex-1 py-2.5 rounded-xl bg-primary text-primary-foreground font-medium text-sm hover:opacity-90 disabled:opacity-50">
+                {formLoading ? 'Saving...' : 'Save Changes'}
               </button>
             </div>
           </div>
@@ -403,8 +612,7 @@ const ClassesPage = () => {
             <div className="p-5 space-y-4">
               {needsApproval && (
                 <div className="flex items-center gap-2 p-2.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-700 text-xs">
-                  <Clock className="w-4 h-4 flex-shrink-0" />
-                  <span>Subject will require approval.</span>
+                  <Clock className="w-4 h-4 flex-shrink-0" /><span>Subject will require approval.</span>
                 </div>
               )}
               {formError && <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-sm">{formError}</div>}
@@ -435,6 +643,43 @@ const ClassesPage = () => {
         </div>
       )}
 
+      {/* Edit Subject Modal */}
+      {editSubjectModal.open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+          <div className="bg-card rounded-2xl shadow-xl border border-border w-full max-w-sm">
+            <div className="flex items-center justify-between p-5 border-b border-border">
+              <h3 className="font-bold">Edit Subject</h3>
+              <button onClick={() => setEditSubjectModal({ open: false })} className="p-1.5 rounded-lg hover:bg-muted"><X className="w-4 h-4" /></button>
+            </div>
+            <div className="p-5 space-y-4">
+              {formError && <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-sm">{formError}</div>}
+              <div>
+                <label className="text-sm font-semibold mb-1.5 block">Subject Name *</label>
+                <input value={subjectName} onChange={e => setSubjectName(e.target.value)}
+                  className="w-full px-4 py-2.5 rounded-xl border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 text-sm" />
+              </div>
+              <div>
+                <label className="text-sm font-semibold mb-1.5 block">Color</label>
+                <div className="flex gap-2 flex-wrap">
+                  {SUBJECT_COLORS.map(c => (
+                    <button key={c} onClick={() => setSubjectColor(c)}
+                      className={cn('w-7 h-7 rounded-full border-2 transition-transform hover:scale-110', subjectColor === c ? 'border-foreground' : 'border-transparent')}
+                      style={{ background: c }} />
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div className="flex gap-3 p-5 border-t border-border">
+              <button onClick={() => setEditSubjectModal({ open: false })} className="flex-1 py-2.5 rounded-xl border border-border font-medium text-sm hover:bg-muted">Cancel</button>
+              <button onClick={handleEditSubject} disabled={formLoading}
+                className="flex-1 py-2.5 rounded-xl bg-primary text-primary-foreground font-medium text-sm hover:opacity-90 disabled:opacity-50">
+                {formLoading ? 'Saving...' : 'Save Changes'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Add Chapter Modal */}
       {addChapterModal.open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
@@ -446,8 +691,7 @@ const ClassesPage = () => {
             <div className="p-5 space-y-4">
               {needsApproval && (
                 <div className="flex items-center gap-2 p-2.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-700 text-xs">
-                  <Clock className="w-4 h-4 flex-shrink-0" />
-                  <span>Chapter will require approval.</span>
+                  <Clock className="w-4 h-4 flex-shrink-0" /><span>Chapter will require approval.</span>
                 </div>
               )}
               {formError && <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-sm">{formError}</div>}
@@ -467,6 +711,38 @@ const ClassesPage = () => {
               <button onClick={handleCreateChapter} disabled={formLoading}
                 className="flex-1 py-2.5 rounded-xl bg-primary text-primary-foreground font-medium text-sm hover:opacity-90 disabled:opacity-50">
                 {formLoading ? 'Adding...' : needsApproval ? 'Submit for Approval' : 'Add Chapter'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Chapter Modal */}
+      {editChapterModal.open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+          <div className="bg-card rounded-2xl shadow-xl border border-border w-full max-w-sm">
+            <div className="flex items-center justify-between p-5 border-b border-border">
+              <h3 className="font-bold">Edit Chapter</h3>
+              <button onClick={() => setEditChapterModal({ open: false })} className="p-1.5 rounded-lg hover:bg-muted"><X className="w-4 h-4" /></button>
+            </div>
+            <div className="p-5 space-y-4">
+              {formError && <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-sm">{formError}</div>}
+              <div>
+                <label className="text-sm font-semibold mb-1.5 block">Chapter Name *</label>
+                <input value={chapterName} onChange={e => setChapterName(e.target.value)}
+                  className="w-full px-4 py-2.5 rounded-xl border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 text-sm" />
+              </div>
+              <div>
+                <label className="text-sm font-semibold mb-1.5 block">Description</label>
+                <textarea value={chapterDesc} onChange={e => setChapterDesc(e.target.value)} rows={2}
+                  className="w-full px-4 py-2.5 rounded-xl border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 text-sm resize-none" />
+              </div>
+            </div>
+            <div className="flex gap-3 p-5 border-t border-border">
+              <button onClick={() => setEditChapterModal({ open: false })} className="flex-1 py-2.5 rounded-xl border border-border font-medium text-sm hover:bg-muted">Cancel</button>
+              <button onClick={handleEditChapter} disabled={formLoading}
+                className="flex-1 py-2.5 rounded-xl bg-primary text-primary-foreground font-medium text-sm hover:opacity-90 disabled:opacity-50">
+                {formLoading ? 'Saving...' : 'Save Changes'}
               </button>
             </div>
           </div>
