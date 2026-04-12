@@ -218,7 +218,20 @@ const BulkStudentImportModal: React.FC<BulkStudentImportModalProps> = ({ onClose
 
       if (rawRows.length === 0) throw new Error('No rows found in the uploaded spreadsheet');
 
-      const classMap = new Map(availableClasses.map((item) => [normalizeClassKey(item.name), item]));
+      // Build multiple lookup keys for flexible matching: "class1", "1", "grade1", original name
+      const classMap = new Map<string, ClassOption>();
+      for (const item of availableClasses) {
+        classMap.set(normalizeClassKey(item.name), item);
+        // Also map just the number if class name contains one (e.g. "Class 4" -> "4")
+        const numMatch = item.name.match(/\d+/);
+        if (numMatch) {
+          classMap.set(numMatch[0], item);
+          classMap.set('class' + numMatch[0], item);
+          classMap.set('grade' + numMatch[0], item);
+        }
+        // Map exact lowercase
+        classMap.set(item.name.trim().toLowerCase(), item);
+      }
       const admissions = new Set<string>();
 
       const normalizedAdmissions = rawRows
@@ -254,7 +267,7 @@ const BulkStudentImportModal: React.FC<BulkStudentImportModalProps> = ({ onClose
         const admissionNo = normalizeAdmissionNo(mapped.admission_no);
         const fullName = cellToText(mapped.full_name);
         const className = cellToText(mapped.class_name);
-        const classRecord = classMap.get(normalizeClassKey(className));
+        const classRecord = classMap.get(normalizeClassKey(className)) || classMap.get(className.trim().toLowerCase()) || classMap.get(className.trim());
         const dateOfBirth = excelValueToIsoDate(mapped.date_of_birth);
         const rollNo = cellToText(mapped.roll_no);
         const section = cellToText(mapped.section).toUpperCase();
