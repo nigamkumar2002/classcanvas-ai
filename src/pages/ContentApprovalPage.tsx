@@ -176,47 +176,48 @@ const ContentApprovalPage = () => {
       let derivedSchoolId = row.school_id || null;
 
       if (row.content_type === 'exam') {
-        const exam = examMap.get(row.content_id);
-        const chapter = exam ? chapterMap.get(exam.chapter_id) : null;
-        const subject = chapter ? subjectMap.get(chapter.subject_id) : null;
-        const classItem = subject ? classMap.get(subject.class_id) : null;
+        const exam: any = examMap.get(row.content_id);
+        const chapter: any = exam ? chapterMap.get(exam.chapter_id) : null;
+        const subject: any = chapter ? subjectMap.get(chapter.subject_id) : null;
+        const classItem: any = subject ? classMap.get(subject.class_id) : null;
         chapterName = chapter?.name || '';
         subjectName = subject?.name || '';
         className = classItem?.name || '';
         derivedSchoolId = derivedSchoolId || classItem?.school_id || null;
       } else if (row.content_type === 'material') {
-        const material = materialMap.get(row.content_id);
-        const chapter = material ? chapterMap.get(material.chapter_id) : null;
-        const subject = chapter ? subjectMap.get(chapter.subject_id) : null;
-        const classItem = subject ? classMap.get(subject.class_id) : null;
+        const material: any = materialMap.get(row.content_id);
+        const chapter: any = material ? chapterMap.get(material.chapter_id) : null;
+        const subject: any = chapter ? subjectMap.get(chapter.subject_id) : null;
+        const classItem: any = subject ? classMap.get(subject.class_id) : null;
         chapterName = chapter?.name || '';
         subjectName = subject?.name || '';
         className = classItem?.name || '';
         derivedSchoolId = derivedSchoolId || classItem?.school_id || null;
       } else if (row.content_type === 'chapter') {
-        const chapter = chapterMap.get(row.content_id);
-        const subject = chapter ? subjectMap.get(chapter.subject_id) : null;
-        const classItem = subject ? classMap.get(subject.class_id) : null;
+        const chapter: any = chapterMap.get(row.content_id);
+        const subject: any = chapter ? subjectMap.get(chapter.subject_id) : null;
+        const classItem: any = subject ? classMap.get(subject.class_id) : null;
         chapterName = chapter?.name || '';
         subjectName = subject?.name || '';
         className = classItem?.name || '';
         derivedSchoolId = derivedSchoolId || classItem?.school_id || null;
       } else if (row.content_type === 'subject') {
-        const subject = subjectMap.get(row.content_id);
-        const classItem = subject ? classMap.get(subject.class_id) : null;
+        const subject: any = subjectMap.get(row.content_id);
+        const classItem: any = subject ? classMap.get(subject.class_id) : null;
         subjectName = subject?.name || '';
         className = classItem?.name || '';
         derivedSchoolId = derivedSchoolId || classItem?.school_id || null;
       } else if (row.content_type === 'class') {
-        const classItem = classMap.get(row.content_id);
+        const classItem: any = classMap.get(row.content_id);
         className = classItem?.name || '';
         derivedSchoolId = derivedSchoolId || classItem?.school_id || null;
       }
 
+      const sub: any = submitter;
       return {
         ...row,
-        submitter_name: submitter?.full_name || 'Unknown',
-        submitter_role: submitter?.role || 'unknown',
+        submitter_name: sub?.full_name || 'Unknown',
+        submitter_role: sub?.role || 'unknown',
         chapter_name: chapterName || undefined,
         subject_name: subjectName || undefined,
         class_name: className || undefined,
