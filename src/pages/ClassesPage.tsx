@@ -81,8 +81,8 @@ const ClassesPage = () => {
   useEffect(() => {
     if (!user?.school_id) return;
     const loadSetting = async () => {
-      const { data } = await supabase
-        .from('school_settings' as any)
+      const { data } = await (supabase as any)
+        .from('school_settings')
         .select('value')
         .eq('school_id', user.school_id)
         .eq('key', 'require_content_approval')

@@ -181,7 +181,7 @@ const ContentApprovalPage = () => {
       };
       const table = tableMap[approval.content_type];
       if (table) {
-        await supabase.from(table).update({ is_active: true }).eq('id', approval.content_id);
+        await (supabase as any).from(table).update({ is_active: true }).eq('id', approval.content_id);
       }
       count++;
     }

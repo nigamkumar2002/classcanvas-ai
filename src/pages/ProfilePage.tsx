@@ -24,8 +24,8 @@ const ProfilePage = () => {
   useEffect(() => {
     if (!isSuperAdmin || !user?.school_id) return;
     const load = async () => {
-      const { data } = await supabase
-        .from('school_settings' as any)
+      const { data } = await (supabase as any)
+        .from('school_settings')
         .select('value')
         .eq('school_id', user.school_id)
         .eq('key', 'require_content_approval')
@@ -43,15 +43,15 @@ const ProfilePage = () => {
     const newValue = !approvalRequired;
     
     // Upsert the setting
-    const { error } = await supabase
-      .from('school_settings' as any)
+    const { error } = await (supabase as any)
+      .from('school_settings')
       .upsert({
         school_id: user.school_id,
         key: 'require_content_approval',
         value: newValue,
         updated_by: user.user_id,
         updated_at: new Date().toISOString(),
-      } as any, { onConflict: 'school_id,key' });
+      }, { onConflict: 'school_id,key' });
     
     if (error) {
       toast.error('Failed to update approval setting');
