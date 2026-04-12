@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
-import { CheckCircle, XCircle, Clock, Eye, MessageSquare, Filter, RotateCcw, ShieldCheck, FileText, BookOpen, GraduationCap, ClipboardList } from 'lucide-react';
+import { CheckCircle, XCircle, Clock, Eye, MessageSquare, Filter, RotateCcw, ShieldCheck, FileText, BookOpen, GraduationCap, ClipboardList, Search, CheckCheck } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import ExamPreviewModal from '@/components/approval/ExamPreviewModal';
 import ContentPreviewModal from '@/components/approval/ContentPreviewModal';
@@ -20,7 +20,6 @@ interface Approval {
   updated_at: string;
   submitter_name?: string;
   submitter_role?: string;
-  // Extra context
   class_name?: string;
   subject_name?: string;
   chapter_name?: string;
@@ -47,6 +46,9 @@ const ContentApprovalPage = () => {
   const [approvals, setApprovals] = useState<Approval[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkApproving, setBulkApproving] = useState(false);
   const [previewExam, setPreviewExam] = useState<{ examId: string; approvalId: string } | null>(null);
   const [previewContent, setPreviewContent] = useState<{ contentType: string; contentId: string; approvalId: string } | null>(null);
 
@@ -66,7 +68,6 @@ const ContentApprovalPage = () => {
       profiles?.forEach(p => { profileMap[p.user_id] = { name: p.full_name, role: p.role }; });
     }
 
-    // Fetch context info for each approval
     const enriched: Approval[] = [];
     for (const a of (data || [])) {
       const item: Approval = {
@@ -75,7 +76,6 @@ const ContentApprovalPage = () => {
         submitter_role: profileMap[a.submitted_by]?.role || 'unknown',
       };
 
-      // Fetch hierarchy info
       try {
         if (a.content_type === 'exam') {
           const { data: exam } = await supabase.from('exams').select('chapter_id').eq('id', a.content_id).single();
@@ -138,6 +138,7 @@ const ContentApprovalPage = () => {
     }
 
     setApprovals(enriched);
+    setSelectedIds(new Set());
     setLoading(false);
   };
 
@@ -158,7 +159,67 @@ const ContentApprovalPage = () => {
     }
   };
 
-  const filtered = filter === 'all' ? approvals : approvals.filter(a => a.status === filter);
+  // Bulk approve
+  const handleBulkApprove = async (ids: string[]) => {
+    if (ids.length === 0) return;
+    setBulkApproving(true);
+    let count = 0;
+    for (const id of ids) {
+      const approval = approvals.find(a => a.id === id);
+      if (!approval || approval.status !== 'pending') continue;
+
+      // Approve the content approval record
+      await supabase.from('content_approvals').update({
+        status: 'approved',
+        reviewer_id: user?.user_id,
+        updated_at: new Date().toISOString(),
+      }).eq('id', id);
+
+      // Activate the content
+      const tableMap: Record<string, string> = {
+        class: 'classes', subject: 'subjects', chapter: 'chapters', material: 'materials', exam: 'exams',
+      };
+      const table = tableMap[approval.content_type];
+      if (table) {
+        await supabase.from(table).update({ is_active: true }).eq('id', approval.content_id);
+      }
+      count++;
+    }
+    toast({ title: `${count} item(s) approved` });
+    setSelectedIds(new Set());
+    setBulkApproving(false);
+    fetchApprovals();
+  };
+
+  // Apply filters
+  const statusFiltered = filter === 'all' ? approvals : approvals.filter(a => a.status === filter);
+  const filtered = searchQuery.trim()
+    ? statusFiltered.filter(a =>
+        a.content_title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        a.submitter_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        a.class_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        a.subject_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        a.chapter_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        a.content_type.toLowerCase().includes(searchQuery.toLowerCase())
+      )
+    : statusFiltered;
+
+  const pendingFiltered = filtered.filter(a => a.status === 'pending' && canReviewItem(a));
+  const allPendingSelected = pendingFiltered.length > 0 && pendingFiltered.every(a => selectedIds.has(a.id));
+
+  const toggleSelect = (id: string) => {
+    const n = new Set(selectedIds);
+    n.has(id) ? n.delete(id) : n.add(id);
+    setSelectedIds(n);
+  };
+
+  const toggleSelectAllPending = () => {
+    if (allPendingSelected) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(pendingFiltered.map(a => a.id)));
+    }
+  };
 
   if (loading) return (
     <div className="flex items-center justify-center h-64">
@@ -192,17 +253,49 @@ const ContentApprovalPage = () => {
         ))}
       </div>
 
-      {/* Filters */}
-      <div className="flex items-center gap-2 flex-wrap">
-        <Filter className="w-4 h-4 text-muted-foreground" />
-        {['all', 'pending', 'approved', 'rejected', 'revision_requested'].map(s => (
-          <button key={s} onClick={() => setFilter(s)}
-            className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${filter === s ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/80'}`}>
-            {s === 'all' ? 'All' : STATUS_STYLES[s]?.label || s}
-            {s !== 'all' && <span className="ml-1">({approvals.filter(a => a.status === s).length})</span>}
-          </button>
-        ))}
+      {/* Filters + Search */}
+      <div className="space-y-3">
+        <div className="flex items-center gap-2 flex-wrap">
+          <Filter className="w-4 h-4 text-muted-foreground" />
+          {['all', 'pending', 'approved', 'rejected', 'revision_requested'].map(s => (
+            <button key={s} onClick={() => setFilter(s)}
+              className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${filter === s ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/80'}`}>
+              {s === 'all' ? 'All' : STATUS_STYLES[s]?.label || s}
+              {s !== 'all' && <span className="ml-1">({approvals.filter(a => a.status === s).length})</span>}
+            </button>
+          ))}
+        </div>
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <input
+            value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
+            placeholder="Search by title, class, subject, chapter, teacher..."
+            className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+          />
+        </div>
       </div>
+
+      {/* Bulk Actions */}
+      {canReview && pendingFiltered.length > 0 && (
+        <div className="flex items-center gap-3 flex-wrap">
+          <button onClick={() => handleBulkApprove(pendingFiltered.map(a => a.id))} disabled={bulkApproving}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-green-600 text-white text-sm font-medium hover:bg-green-700 disabled:opacity-50">
+            <CheckCheck className="w-4 h-4" /> Approve All Pending ({pendingFiltered.length})
+          </button>
+          <label className="flex items-center gap-2 text-sm cursor-pointer">
+            <input type="checkbox" checked={allPendingSelected} onChange={toggleSelectAllPending}
+              className="w-4 h-4 rounded border-border accent-primary" />
+            Select All Pending
+            {selectedIds.size > 0 && <span className="text-muted-foreground">{selectedIds.size} of {pendingFiltered.length} selected</span>}
+          </label>
+          {selectedIds.size > 0 && (
+            <button onClick={() => handleBulkApprove([...selectedIds])} disabled={bulkApproving}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 disabled:opacity-50">
+              <CheckCircle className="w-4 h-4" /> Approve Selected ({selectedIds.size})
+            </button>
+          )}
+        </div>
+      )}
 
       {/* List */}
       {filtered.length === 0 ? (
@@ -217,12 +310,17 @@ const ContentApprovalPage = () => {
             const style = STATUS_STYLES[a.status] || STATUS_STYLES.pending;
             const ContentIcon = CONTENT_ICONS[a.content_type] || FileText;
             const StatusIcon = style.icon;
-            const showReview = canReview && a.status === 'pending' && canReviewItem(a);
+            const showReview = canReview && canReviewItem(a);
+            const isPending = a.status === 'pending';
 
             return (
               <div key={a.id} className="bg-card rounded-xl border border-border p-4 shadow-sm hover:shadow-md transition-shadow">
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex gap-3 flex-1 min-w-0">
+                    {isPending && showReview && (
+                      <input type="checkbox" checked={selectedIds.has(a.id)} onChange={() => toggleSelect(a.id)}
+                        className="w-4 h-4 mt-3 rounded border-border accent-primary flex-shrink-0" />
+                    )}
                     <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${style.bg}`}>
                       <ContentIcon className={`w-5 h-5 ${style.text}`} />
                     </div>
@@ -236,7 +334,6 @@ const ContentApprovalPage = () => {
                       </div>
                       <h3 className="font-semibold truncate">{a.content_title}</h3>
 
-                      {/* Context details */}
                       <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1 text-xs text-muted-foreground">
                         {a.school_name && <span>🏫 {a.school_name}</span>}
                         {a.class_name && <span>📚 {a.class_name}</span>}
@@ -259,11 +356,10 @@ const ContentApprovalPage = () => {
                   </div>
 
                   <div className="flex flex-col gap-2 flex-shrink-0">
-                    {/* Open/Preview button - always visible for reviewers */}
-                    {canReview && canReviewItem(a) && (
+                    {showReview && (
                       <button onClick={() => handleOpenPreview(a)}
                         className="px-3 py-1.5 text-xs bg-primary text-primary-foreground rounded-lg hover:opacity-90 flex items-center gap-1">
-                        <Eye className="w-3 h-3" /> {a.status === 'pending' ? 'Review & Preview' : 'View Details'}
+                        <Eye className="w-3 h-3" /> {isPending ? 'Review & Preview' : 'View Details'}
                       </button>
                     )}
                   </div>
@@ -274,7 +370,6 @@ const ContentApprovalPage = () => {
         </div>
       )}
 
-      {/* Exam preview modal */}
       {previewExam && (
         <ExamPreviewModal
           examId={previewExam.examId}
@@ -285,7 +380,6 @@ const ContentApprovalPage = () => {
         />
       )}
 
-      {/* Content preview modal */}
       {previewContent && (
         <ContentPreviewModal
           contentType={previewContent.contentType}
