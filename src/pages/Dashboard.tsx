@@ -3,7 +3,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { BarChart3, BookOpen, Users, FileText, PlayCircle, ClipboardList, ChevronRight, School, Clock, Megaphone } from 'lucide-react';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import AnnouncementBanner from '@/components/AnnouncementBanner';
 
 interface Stats {
@@ -15,6 +15,7 @@ const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899'
 
 const Dashboard = () => {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [stats, setStats] = useState<Stats>({ classes: 0, subjects: 0, chapters: 0, materials: 0, teachers: 0, students: 0, exams: 0, schools: 0 });
   const [loading, setLoading] = useState(true);
   const [subjectData, setSubjectData] = useState<any[]>([]);
@@ -99,26 +100,27 @@ const Dashboard = () => {
     </div>
   );
 
+  // Clickable stat cards with navigation targets
   const statCards = isDeveloper ? [
-    { label: 'Total Schools', value: stats.schools, icon: School, gradient: 'bg-gradient-blue' },
-    { label: 'Total Classes', value: stats.classes, icon: BookOpen, gradient: 'bg-gradient-green' },
-    { label: 'Total Subjects', value: stats.subjects, icon: FileText, gradient: 'bg-gradient-purple' },
-    { label: 'Total Materials', value: stats.materials, icon: BarChart3, gradient: 'bg-gradient-amber' },
+    { label: 'Total Schools', value: stats.schools, icon: School, gradient: 'bg-gradient-blue', link: '/schools' },
+    { label: 'Total Classes', value: stats.classes, icon: BookOpen, gradient: 'bg-gradient-green', link: '/classes' },
+    { label: 'Total Subjects', value: stats.subjects, icon: FileText, gradient: 'bg-gradient-purple', link: '/classes' },
+    { label: 'Total Materials', value: stats.materials, icon: BarChart3, gradient: 'bg-gradient-amber', link: '/classes' },
   ] : isStudent ? [
-    { label: 'My Subjects', value: stats.subjects, icon: BookOpen, gradient: 'bg-gradient-blue' },
-    { label: 'Chapters', value: stats.chapters, icon: FileText, gradient: 'bg-gradient-green' },
-    { label: 'Materials', value: stats.materials, icon: BarChart3, gradient: 'bg-gradient-amber' },
-    { label: 'Exams Available', value: stats.exams, icon: ClipboardList, gradient: 'bg-gradient-purple' },
+    { label: 'My Subjects', value: stats.subjects, icon: BookOpen, gradient: 'bg-gradient-blue', link: '/classes' },
+    { label: 'Chapters', value: stats.chapters, icon: FileText, gradient: 'bg-gradient-green', link: '/classes' },
+    { label: 'Materials', value: stats.materials, icon: BarChart3, gradient: 'bg-gradient-amber', link: '/classes' },
+    { label: 'Exams Available', value: stats.exams, icon: ClipboardList, gradient: 'bg-gradient-purple', link: '/exams' },
   ] : isTeacher ? [
-    { label: 'My Subjects', value: stats.subjects, icon: BookOpen, gradient: 'bg-gradient-blue' },
-    { label: 'Chapters', value: stats.chapters, icon: FileText, gradient: 'bg-gradient-green' },
-    { label: 'Materials', value: stats.materials, icon: BarChart3, gradient: 'bg-gradient-amber' },
-    { label: 'Exams Created', value: stats.exams, icon: ClipboardList, gradient: 'bg-gradient-purple' },
+    { label: 'My Subjects', value: stats.subjects, icon: BookOpen, gradient: 'bg-gradient-blue', link: '/classes' },
+    { label: 'Chapters', value: stats.chapters, icon: FileText, gradient: 'bg-gradient-green', link: '/classes' },
+    { label: 'Materials', value: stats.materials, icon: BarChart3, gradient: 'bg-gradient-amber', link: '/classes' },
+    { label: 'Exams Created', value: stats.exams, icon: ClipboardList, gradient: 'bg-gradient-purple', link: '/exams' },
   ] : [
-    { label: 'Total Classes', value: stats.classes, icon: BookOpen, gradient: 'bg-gradient-blue' },
-    { label: 'Subjects', value: stats.subjects, icon: FileText, gradient: 'bg-gradient-green' },
-    { label: 'Teachers', value: stats.teachers, icon: Users, gradient: 'bg-gradient-purple' },
-    { label: 'Students', value: stats.students, icon: Users, gradient: 'bg-gradient-amber' },
+    { label: 'Total Classes', value: stats.classes, icon: BookOpen, gradient: 'bg-gradient-blue', link: '/classes' },
+    { label: 'Subjects', value: stats.subjects, icon: FileText, gradient: 'bg-gradient-green', link: '/classes' },
+    { label: 'Teachers', value: stats.teachers, icon: Users, gradient: 'bg-gradient-purple', link: '/users?role=teacher' },
+    { label: 'Students', value: stats.students, icon: Users, gradient: 'bg-gradient-amber', link: '/users?role=student' },
   ];
 
   return (
@@ -139,15 +141,17 @@ const Dashboard = () => {
         </div>
       </div>
 
+      {/* Clickable stat cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {statCards.map(s => (
-          <div key={s.label} className="stat-card">
+          <button key={s.label} onClick={() => navigate(s.link)}
+            className="stat-card text-left cursor-pointer hover:shadow-md transition-all">
             <div className={`w-12 h-12 rounded-xl ${s.gradient} flex items-center justify-center mb-4`}>
               <s.icon className="w-6 h-6 text-white" />
             </div>
             <p className="text-2xl font-bold">{s.value}</p>
             <p className="text-sm text-muted-foreground mt-0.5">{s.label}</p>
-          </div>
+          </button>
         ))}
       </div>
 

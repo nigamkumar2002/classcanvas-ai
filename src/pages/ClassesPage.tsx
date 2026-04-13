@@ -4,7 +4,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import {
   Plus, ChevronDown, ChevronRight, BookOpen, FileText,
   Upload, Video, ClipboardList, FileQuestion, BookMarked, GraduationCap, X, Clock, ShieldCheck,
-  Pencil, Trash2, Search
+  Pencil, Trash2, Search, Copy, CheckCheck
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import ContentUploadModal from '@/components/ContentUploadModal';
@@ -66,8 +66,17 @@ const ClassesPage = () => {
   const [formLoading, setFormLoading] = useState(false);
   const [formError, setFormError] = useState('');
 
+  // Subject copy modal
+  const [showCopySubjects, setShowCopySubjects] = useState(false);
+  const [copySourceClassId, setCopySourceClassId] = useState('');
+  const [copyTargetClassIds, setCopyTargetClassIds] = useState<Set<string>>(new Set());
+  const [copyLoading, setCopyLoading] = useState(false);
+
   // Approval toggle
   const [approvalRequired, setApprovalRequired] = useState(true);
+
+  // Operation guard to prevent double-clicks
+  const [operationInProgress, setOperationInProgress] = useState(false);
 
   const canEdit = user?.role === 'admin' || user?.role === 'super_admin' || user?.role === 'teacher' || user?.role === 'developer';
   const canDelete = user?.role === 'admin' || user?.role === 'super_admin' || user?.role === 'developer';
@@ -94,26 +103,48 @@ const ClassesPage = () => {
     loadSetting();
   }, [user?.school_id]);
 
-  const fetchAll = async () => {
+  const fetchAll = useCallback(async () => {
     try {
-      const [{ data: cls }, { data: subs }, { data: chps }, { data: mats }] = await Promise.all([
-        supabase.from('classes').select('*').order('grade_level'),
-        supabase.from('subjects').select('*'),
-        supabase.from('chapters').select('*').order('order_index'),
-        supabase.from('materials').select('*'),
+      // Fetch all data without the default 1000 limit using pagination
+      const fetchAllRows = async (table: string, orderCol?: string) => {
+        const allRows: any[] = [];
+        const batchSize = 1000;
+        let from = 0;
+        let hasMore = true;
+        while (hasMore) {
+          let query = (supabase as any).from(table).select('*').range(from, from + batchSize - 1);
+          if (orderCol) query = query.order(orderCol);
+          const { data, error } = await query;
+          if (error) throw error;
+          if (data && data.length > 0) {
+            allRows.push(...data);
+            from += batchSize;
+            hasMore = data.length === batchSize;
+          } else {
+            hasMore = false;
+          }
+        }
+        return allRows;
+      };
+
+      const [cls, subs, chps, mats] = await Promise.all([
+        fetchAllRows('classes', 'grade_level'),
+        fetchAllRows('subjects'),
+        fetchAllRows('chapters', 'order_index'),
+        fetchAllRows('materials'),
       ]);
-      setClasses((cls as Class[]) || []);
-      setSubjects((subs as Subject[]) || []);
-      setChapters((chps as Chapter[]) || []);
-      setMaterials((mats as Material[]) || []);
+      setClasses(cls || []);
+      setSubjects(subs || []);
+      setChapters(chps || []);
+      setMaterials(mats || []);
     } catch (error) {
       console.error('Error fetching data:', error);
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  useEffect(() => { fetchAll(); }, []);
+  useEffect(() => { fetchAll(); }, [fetchAll]);
 
   const toggle = (set: Set<string>, id: string) => {
     const n = new Set(set);
@@ -188,32 +219,44 @@ const ClassesPage = () => {
   const handleCreateChapter = async () => {
     if (!chapterName.trim() || !addChapterModal.subjectId) { setFormError('Chapter name required'); return; }
     if (!user?.school_id) { setFormError('Your account is not assigned to a school.'); return; }
+    if (operationInProgress) return;
+    setOperationInProgress(true);
     setFormLoading(true); setFormError('');
     
-    // Auto-assign order_index based on existing chapters
-    const existingChapters = chapters.filter(c => c.subject_id === addChapterModal.subjectId);
-    const maxOrder = existingChapters.length > 0 ? Math.max(...existingChapters.map(c => c.order_index || 0)) : 0;
-    
-    const { data, error } = await supabase.from('chapters').insert({
-      subject_id: addChapterModal.subjectId,
-      name: chapterName.trim(),
-      description: chapterDesc.trim() || null,
-      order_index: maxOrder + 1,
-      school_id: user.school_id,
-      is_active: !needsApproval,
-    } as any).select().single();
-    
-    if (error) { setFormError(error.message); } else {
-      if (needsApproval && data) {
-        await submitForApproval('chapter', data.id, chapterName.trim());
-        toast({ title: 'Sent for Approval', description: `Chapter "${chapterName.trim()}" has been submitted for approval.` });
-      } else {
-        toast({ title: 'Chapter Created', description: `Chapter "${chapterName.trim()}" has been added.` });
+    try {
+      // Query DB directly for max order_index to avoid stale state
+      const { data: existingChapters } = await supabase
+        .from('chapters')
+        .select('order_index')
+        .eq('subject_id', addChapterModal.subjectId)
+        .order('order_index', { ascending: false })
+        .limit(1);
+
+      const maxOrder = existingChapters && existingChapters.length > 0 ? existingChapters[0].order_index : 0;
+      
+      const { data, error } = await supabase.from('chapters').insert({
+        subject_id: addChapterModal.subjectId,
+        name: chapterName.trim(),
+        description: chapterDesc.trim() || null,
+        order_index: maxOrder + 1,
+        school_id: user.school_id,
+        is_active: !needsApproval,
+      } as any).select().single();
+      
+      if (error) { setFormError(error.message); } else {
+        if (needsApproval && data) {
+          await submitForApproval('chapter', data.id, chapterName.trim());
+          toast({ title: 'Sent for Approval', description: `Chapter "${chapterName.trim()}" has been submitted for approval.` });
+        } else {
+          toast({ title: 'Chapter Created', description: `Chapter "${chapterName.trim()}" has been added.` });
+        }
+        setAddChapterModal({ open: false }); setChapterName(''); setChapterDesc('');
+        await fetchAll();
       }
-      setAddChapterModal({ open: false }); setChapterName(''); setChapterDesc('');
-      fetchAll();
+    } finally {
+      setFormLoading(false);
+      setOperationInProgress(false);
     }
-    setFormLoading(false);
   };
 
   // Edit handlers
@@ -254,43 +297,101 @@ const ClassesPage = () => {
     setFormLoading(false);
   };
 
-  // Delete handlers
+  // Delete handlers with operation guard
   const handleDeleteClass = async (id: string, name: string) => {
+    if (operationInProgress) return;
     if (!confirm(`Delete class "${name}" and all its subjects, chapters, and materials?`)) return;
-    const { error } = await supabase.from('classes').delete().eq('id', id);
-    if (error) { toast({ title: 'Error', description: error.message, variant: 'destructive' }); } else {
-      toast({ title: 'Class Deleted' }); fetchAll();
-    }
+    setOperationInProgress(true);
+    try {
+      const { error } = await supabase.from('classes').delete().eq('id', id);
+      if (error) { toast({ title: 'Error', description: error.message, variant: 'destructive' }); } else {
+        toast({ title: 'Class Deleted' }); await fetchAll();
+      }
+    } finally { setOperationInProgress(false); }
   };
 
   const handleDeleteSubject = async (id: string, name: string) => {
+    if (operationInProgress) return;
     if (!confirm(`Delete subject "${name}" and all its chapters and materials?`)) return;
-    // Delete chapters and materials first
-    const subChapters = chapters.filter(c => c.subject_id === id);
-    for (const ch of subChapters) {
-      await supabase.from('materials').delete().eq('chapter_id', ch.id);
-    }
-    await supabase.from('chapters').delete().eq('subject_id', id);
-    const { error } = await supabase.from('subjects').delete().eq('id', id);
-    if (error) { toast({ title: 'Error', description: error.message, variant: 'destructive' }); } else {
-      toast({ title: 'Subject Deleted' }); fetchAll();
-    }
+    setOperationInProgress(true);
+    try {
+      const subChapters = chapters.filter(c => c.subject_id === id);
+      for (const ch of subChapters) {
+        await supabase.from('materials').delete().eq('chapter_id', ch.id);
+      }
+      await supabase.from('chapters').delete().eq('subject_id', id);
+      const { error } = await supabase.from('subjects').delete().eq('id', id);
+      if (error) { toast({ title: 'Error', description: error.message, variant: 'destructive' }); } else {
+        toast({ title: 'Subject Deleted' }); await fetchAll();
+      }
+    } finally { setOperationInProgress(false); }
   };
 
   const handleDeleteChapter = async (id: string, name: string) => {
+    if (operationInProgress) return;
     if (!confirm(`Delete chapter "${name}" and all its materials?`)) return;
-    await supabase.from('materials').delete().eq('chapter_id', id);
-    const { error } = await supabase.from('chapters').delete().eq('id', id);
-    if (error) { toast({ title: 'Error', description: error.message, variant: 'destructive' }); } else {
-      toast({ title: 'Chapter Deleted' }); fetchAll();
-    }
+    setOperationInProgress(true);
+    try {
+      await supabase.from('materials').delete().eq('chapter_id', id);
+      const { error } = await supabase.from('chapters').delete().eq('id', id);
+      if (error) { toast({ title: 'Error', description: error.message, variant: 'destructive' }); } else {
+        toast({ title: 'Chapter Deleted' }); await fetchAll();
+      }
+    } finally { setOperationInProgress(false); }
   };
 
   const handleDeleteMaterial = async (id: string, title: string) => {
+    if (operationInProgress) return;
     if (!confirm(`Delete material "${title}"?`)) return;
-    const { error } = await supabase.from('materials').delete().eq('id', id);
-    if (error) { toast({ title: 'Error', description: error.message, variant: 'destructive' }); } else {
-      toast({ title: 'Material Deleted' }); fetchAll();
+    setOperationInProgress(true);
+    try {
+      const { error } = await supabase.from('materials').delete().eq('id', id);
+      if (error) { toast({ title: 'Error', description: error.message, variant: 'destructive' }); } else {
+        toast({ title: 'Material Deleted' }); await fetchAll();
+      }
+    } finally { setOperationInProgress(false); }
+  };
+
+  // Copy subjects from one class to selected target classes
+  const handleCopySubjects = async () => {
+    if (!copySourceClassId || copyTargetClassIds.size === 0 || !user?.school_id) return;
+    setCopyLoading(true);
+    try {
+      const sourceSubjects = subjects.filter(s => s.class_id === copySourceClassId);
+      if (sourceSubjects.length === 0) {
+        toast({ title: 'No subjects to copy', description: 'Source class has no subjects.', variant: 'destructive' });
+        setCopyLoading(false);
+        return;
+      }
+
+      let created = 0;
+      let skipped = 0;
+      for (const targetClassId of copyTargetClassIds) {
+        const existingInTarget = subjects.filter(s => s.class_id === targetClassId).map(s => s.name.trim().toLowerCase());
+        for (const sub of sourceSubjects) {
+          if (existingInTarget.includes(sub.name.trim().toLowerCase())) {
+            skipped++;
+            continue;
+          }
+          await supabase.from('subjects').insert({
+            class_id: targetClassId,
+            name: sub.name.trim(),
+            description: sub.description || null,
+            color: sub.color,
+            school_id: user.school_id,
+          } as any);
+          created++;
+        }
+      }
+      toast({ title: 'Subjects Copied', description: `${created} subjects created, ${skipped} duplicates skipped.` });
+      setShowCopySubjects(false);
+      setCopySourceClassId('');
+      setCopyTargetClassIds(new Set());
+      await fetchAll();
+    } catch (err: any) {
+      toast({ title: 'Error', description: err.message, variant: 'destructive' });
+    } finally {
+      setCopyLoading(false);
     }
   };
 
@@ -307,19 +408,27 @@ const ClassesPage = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
           <h1 className="text-2xl font-bold">{isStudent ? 'My Classes' : 'Classes & Content'}</h1>
           <p className="text-muted-foreground text-sm mt-1">
             {visibleClasses.length} classes · {uniqueSubjectNames.size} unique subjects · {visibleChapters.length} chapters
           </p>
         </div>
-        {canEdit && (
-          <button onClick={() => { setAddClassModal(true); setFormError(''); setClassName(''); setClassDesc(''); setClassGrade(''); }}
-            className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-xl font-medium text-sm hover:opacity-90 transition-all">
-            <Plus className="w-4 h-4" /> Add Class
-          </button>
-        )}
+        <div className="flex items-center gap-2 flex-wrap">
+          {isSuperAdminOrDev && (
+            <button onClick={() => { setShowCopySubjects(true); setCopySourceClassId(''); setCopyTargetClassIds(new Set()); }}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl border border-border bg-background font-medium text-sm hover:bg-muted transition-all">
+              <Copy className="w-4 h-4" /> Copy Subjects
+            </button>
+          )}
+          {canEdit && (
+            <button onClick={() => { setAddClassModal(true); setFormError(''); setClassName(''); setClassDesc(''); setClassGrade(''); }}
+              className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-xl font-medium text-sm hover:opacity-90 transition-all">
+              <Plus className="w-4 h-4" /> Add Class
+            </button>
+          )}
+        </div>
       </div>
 
       {needsApproval && (
@@ -371,8 +480,8 @@ const ClassesPage = () => {
                       <Pencil className="w-3 h-3 inline mr-1" />Edit
                     </button>
                     {canDelete && (
-                      <button onClick={() => handleDeleteClass(cls.id, cls.name)}
-                        className="px-2 py-1 rounded-lg text-xs font-medium text-destructive hover:bg-destructive/10 transition-colors">
+                      <button onClick={() => handleDeleteClass(cls.id, cls.name)} disabled={operationInProgress}
+                        className="px-2 py-1 rounded-lg text-xs font-medium text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-50">
                         <Trash2 className="w-3 h-3 inline mr-1" />Delete
                       </button>
                     )}
@@ -412,8 +521,8 @@ const ClassesPage = () => {
                                 <Pencil className="w-3 h-3 inline mr-1" />Edit
                               </button>
                               {canDelete && (
-                                <button onClick={() => handleDeleteSubject(sub.id, sub.name)}
-                                  className="px-2 py-1 rounded-lg text-xs font-medium text-destructive hover:bg-destructive/10 transition-colors">
+                                <button onClick={() => handleDeleteSubject(sub.id, sub.name)} disabled={operationInProgress}
+                                  className="px-2 py-1 rounded-lg text-xs font-medium text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-50">
                                   <Trash2 className="w-3 h-3 inline mr-1" />Delete
                                 </button>
                               )}
@@ -455,8 +564,8 @@ const ClassesPage = () => {
                                           <Pencil className="w-3 h-3" />
                                         </button>
                                         {canDelete && (
-                                          <button onClick={() => handleDeleteChapter(chp.id, chp.name)}
-                                            className="px-1.5 py-0.5 rounded text-xs text-destructive hover:bg-destructive/10">
+                                          <button onClick={() => handleDeleteChapter(chp.id, chp.name)} disabled={operationInProgress}
+                                            className="px-1.5 py-0.5 rounded text-xs text-destructive hover:bg-destructive/10 disabled:opacity-50">
                                             <Trash2 className="w-3 h-3" />
                                           </button>
                                         )}
@@ -483,8 +592,8 @@ const ClassesPage = () => {
                                             )}
                                             <span className="text-[10px] text-muted-foreground capitalize">{mat.type?.replace('_', ' ')}</span>
                                             {canDelete && (
-                                              <button onClick={() => handleDeleteMaterial(mat.id, mat.title)}
-                                                className="opacity-0 group-hover:opacity-100 px-1 py-0.5 rounded text-xs text-destructive hover:bg-destructive/10">
+                                              <button onClick={() => handleDeleteMaterial(mat.id, mat.title)} disabled={operationInProgress}
+                                                className="opacity-0 group-hover:opacity-100 px-1 py-0.5 rounded text-xs text-destructive hover:bg-destructive/10 disabled:opacity-50">
                                                 <Trash2 className="w-3 h-3" />
                                               </button>
                                             )}
@@ -708,7 +817,7 @@ const ClassesPage = () => {
             </div>
             <div className="flex gap-3 p-5 border-t border-border">
               <button onClick={() => setAddChapterModal({ open: false })} className="flex-1 py-2.5 rounded-xl border border-border font-medium text-sm hover:bg-muted">Cancel</button>
-              <button onClick={handleCreateChapter} disabled={formLoading}
+              <button onClick={handleCreateChapter} disabled={formLoading || operationInProgress}
                 className="flex-1 py-2.5 rounded-xl bg-primary text-primary-foreground font-medium text-sm hover:opacity-90 disabled:opacity-50">
                 {formLoading ? 'Adding...' : needsApproval ? 'Submit for Approval' : 'Add Chapter'}
               </button>
@@ -743,6 +852,82 @@ const ClassesPage = () => {
               <button onClick={handleEditChapter} disabled={formLoading}
                 className="flex-1 py-2.5 rounded-xl bg-primary text-primary-foreground font-medium text-sm hover:opacity-90 disabled:opacity-50">
                 {formLoading ? 'Saving...' : 'Save Changes'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Copy Subjects Modal */}
+      {showCopySubjects && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+          <div className="bg-card rounded-2xl shadow-xl border border-border w-full max-w-md max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-6 border-b border-border">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center"><Copy className="w-5 h-5 text-primary" /></div>
+                <div>
+                  <h2 className="text-lg font-bold">Copy Subjects Across Classes</h2>
+                  <p className="text-xs text-muted-foreground">Copy all subjects from one class to other classes (duplicates skipped)</p>
+                </div>
+              </div>
+              <button onClick={() => setShowCopySubjects(false)} className="p-2 rounded-xl hover:bg-muted"><X className="w-5 h-5" /></button>
+            </div>
+            <div className="p-6 space-y-5">
+              <div>
+                <label className="text-sm font-semibold mb-1.5 block">Source Class (copy from) *</label>
+                <select value={copySourceClassId} onChange={e => setCopySourceClassId(e.target.value)}
+                  className="w-full px-4 py-2.5 rounded-xl border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 text-sm">
+                  <option value="">Select source class...</option>
+                  {classes.map(c => (
+                    <option key={c.id} value={c.id}>{c.name} ({subjects.filter(s => s.class_id === c.id).length} subjects)</option>
+                  ))}
+                </select>
+              </div>
+              {copySourceClassId && (
+                <div className="p-3 rounded-xl bg-muted/50 border border-border">
+                  <p className="text-xs font-semibold mb-2">Subjects to copy:</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {subjects.filter(s => s.class_id === copySourceClassId).map(s => (
+                      <span key={s.id} className="px-2 py-1 rounded-lg text-xs font-medium bg-primary/10 text-primary">{s.name}</span>
+                    ))}
+                    {subjects.filter(s => s.class_id === copySourceClassId).length === 0 && (
+                      <span className="text-xs text-muted-foreground">No subjects in this class</span>
+                    )}
+                  </div>
+                </div>
+              )}
+              <div>
+                <label className="text-sm font-semibold mb-1.5 block">Target Classes (copy to) *</label>
+                <div className="space-y-2 max-h-48 overflow-y-auto">
+                  {classes.filter(c => c.id !== copySourceClassId).map(c => (
+                    <label key={c.id} className="flex items-center gap-3 p-2.5 rounded-xl border border-border hover:bg-muted/30 cursor-pointer">
+                      <input type="checkbox" checked={copyTargetClassIds.has(c.id)}
+                        onChange={() => {
+                          const n = new Set(copyTargetClassIds);
+                          n.has(c.id) ? n.delete(c.id) : n.add(c.id);
+                          setCopyTargetClassIds(n);
+                        }}
+                        className="w-4 h-4 rounded border-border accent-primary" />
+                      <span className="text-sm font-medium flex-1">{c.name}</span>
+                      <span className="text-xs text-muted-foreground">{subjects.filter(s => s.class_id === c.id).length} subjects</span>
+                    </label>
+                  ))}
+                </div>
+                {classes.filter(c => c.id !== copySourceClassId).length > 1 && (
+                  <button onClick={() => {
+                    const allIds = classes.filter(c => c.id !== copySourceClassId).map(c => c.id);
+                    setCopyTargetClassIds(copyTargetClassIds.size === allIds.length ? new Set() : new Set(allIds));
+                  }} className="text-xs text-primary font-medium mt-2 hover:underline">
+                    {copyTargetClassIds.size === classes.filter(c => c.id !== copySourceClassId).length ? 'Deselect All' : 'Select All'}
+                  </button>
+                )}
+              </div>
+            </div>
+            <div className="flex gap-3 p-6 border-t border-border">
+              <button onClick={() => setShowCopySubjects(false)} className="flex-1 py-2.5 rounded-xl border border-border font-medium text-sm hover:bg-muted">Cancel</button>
+              <button onClick={handleCopySubjects} disabled={copyLoading || !copySourceClassId || copyTargetClassIds.size === 0}
+                className="flex-1 py-2.5 rounded-xl bg-primary text-primary-foreground font-medium text-sm hover:opacity-90 disabled:opacity-50 flex items-center justify-center gap-2">
+                {copyLoading ? 'Copying...' : <><CheckCheck className="w-4 h-4" /> Copy Subjects</>}
               </button>
             </div>
           </div>
