@@ -1,13 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
-import { Users, Plus, Search, Mail, Shield, GraduationCap, BookOpen, UserCheck, X, Eye, EyeOff, School, Trash2, AlertTriangle, Upload } from 'lucide-react';
+import { Users, Plus, Search, Mail, Shield, GraduationCap, BookOpen, UserCheck, X, Eye, EyeOff, School, Trash2, AlertTriangle, Upload, Pencil, ChevronLeft } from 'lucide-react';
 import { toast } from 'sonner';
 import BulkStudentImportModal from '@/components/users/BulkStudentImportModal';
 
 interface Profile {
   id: string; user_id: string; full_name: string; email: string;
   role: string; is_demo: boolean; created_at: string; school_id?: string;
+  class_id?: string; admission_no?: string; roll_no?: string; section?: string;
 }
 
 interface SchoolItem { id: string; name: string; code: string; }
@@ -36,9 +37,19 @@ const UsersPage = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [showBulkImport, setShowBulkImport] = useState(false);
 
+  // Edit user modal
+  const [editUser, setEditUser] = useState<Profile | null>(null);
+  const [editForm, setEditForm] = useState({ full_name: '', email: '', role: '', class_id: '' });
+  const [editLoading, setEditLoading] = useState(false);
+
+  // Drill-down: clicking a role card filters to that role
+  const [drillRole, setDrillRole] = useState<string | null>(null);
+
   const myRole = user?.role || 'student';
   const isDeveloper = myRole === 'developer';
   const canBulkImport = myRole === 'super_admin' || myRole === 'developer';
+
+  const canEditUsers = myRole === 'super_admin' || myRole === 'admin' || myRole === 'developer';
 
   const creatableRoles: Record<string, string[]> = {
     developer: ['super_admin', 'admin', 'teacher', 'student'],
@@ -59,19 +70,33 @@ const UsersPage = () => {
   const fetchUsers = async () => {
     try {
       setLoading(true);
-      const { data: profiles } = await supabase.from('profiles').select('*');
+      // Fetch all profiles (handle >1000)
+      const allProfiles: any[] = [];
+      let from = 0;
+      const batchSize = 1000;
+      let hasMore = true;
+      while (hasMore) {
+        const { data } = await supabase.from('profiles').select('*').range(from, from + batchSize - 1);
+        if (data && data.length > 0) {
+          allProfiles.push(...data);
+          from += batchSize;
+          hasMore = data.length === batchSize;
+        } else {
+          hasMore = false;
+        }
+      }
+
       const { data: roles } = await supabase.from('user_roles').select('*');
 
-      if (profiles && roles) {
+      if (allProfiles.length && roles) {
         const roleMap = new Map(roles.map((r: any) => [r.user_id, r.role]));
-        const enriched = profiles.map((p: any) => ({
+        const enriched = allProfiles.map((p: any) => ({
           ...p,
           role: roleMap.get(p.user_id) || p.role,
         }));
         setUsers(enriched.filter((u: any) => showRoles.includes(u.role)));
       }
 
-      // Fetch schools for developer
       if (isDeveloper) {
         const { data: schoolData } = await supabase.from('schools').select('id, name, code');
         setSchools((schoolData as SchoolItem[]) || []);
@@ -85,7 +110,16 @@ const UsersPage = () => {
 
   useEffect(() => { fetchUsers(); }, []);
 
-  // Load classes when creating a student
+  // Read URL params for initial drill-down
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const role = params.get('role');
+    if (role && showRoles.includes(role)) {
+      setDrillRole(role);
+      setFilterRole(role);
+    }
+  }, []);
+
   useEffect(() => {
     if (form.role !== 'student' || !showAdd) {
       setAvailableClasses([]);
@@ -93,20 +127,13 @@ const UsersPage = () => {
     }
 
     let query = supabase.from('classes').select('id, name').order('name');
-
     if (isDeveloper) {
-      if (!form.school_id) {
-        setAvailableClasses([]);
-        return;
-      }
+      if (!form.school_id) { setAvailableClasses([]); return; }
       query = query.eq('school_id', form.school_id);
     } else if (user?.school_id) {
       query = query.eq('school_id', user.school_id);
     }
-
-    query.then(({ data }) => {
-      setAvailableClasses(data || []);
-    });
+    query.then(({ data }) => { setAvailableClasses(data || []); });
   }, [form.role, showAdd, form.school_id, isDeveloper, user?.school_id]);
 
   const handleAddUser = async () => {
@@ -141,12 +168,35 @@ const UsersPage = () => {
     }
   };
 
+  const handleEditUser = async () => {
+    if (!editUser || !editForm.full_name.trim()) return;
+    setEditLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('update-user', {
+        body: {
+          target_user_id: editUser.user_id,
+          full_name: editForm.full_name.trim(),
+          role: editForm.role,
+          class_id: editForm.class_id || null,
+        },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      toast.success('User updated successfully');
+      setEditUser(null);
+      fetchUsers();
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to update user');
+    } finally {
+      setEditLoading(false);
+    }
+  };
+
   const [deleteConfirm, setDeleteConfirm] = useState<Profile | null>(null);
   const [deletingUser, setDeletingUser] = useState(false);
 
-  // Can this role delete the target user?
   const canDeleteUser = (target: Profile) => {
-    if (target.user_id === user?.user_id) return false; // Can't delete self
+    if (target.user_id === user?.user_id) return false;
     if (user?.role === 'developer') return true;
     if (user?.role === 'super_admin' && ['admin', 'teacher', 'student'].includes(target.role)) return true;
     return false;
@@ -159,10 +209,8 @@ const UsersPage = () => {
       const { data, error } = await supabase.functions.invoke('delete-user', {
         body: { target_user_id: deleteConfirm.user_id },
       });
-
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
-
       toast.success(`${deleteConfirm.full_name} has been removed`);
       setUsers(prev => prev.filter(item => item.user_id !== deleteConfirm.user_id));
       setDeleteConfirm(null);
@@ -173,12 +221,12 @@ const UsersPage = () => {
     }
   };
 
-  // Hide demo users for non-developer roles for professional appearance
   const filteredUsers = users.filter(u => {
     if (!isDeveloper && u.is_demo) return false;
     const matchSearch = u.full_name.toLowerCase().includes(search.toLowerCase()) ||
       u.email.toLowerCase().includes(search.toLowerCase());
-    const matchRole = filterRole === 'all' || u.role === filterRole;
+    const activeFilter = drillRole || filterRole;
+    const matchRole = activeFilter === 'all' || u.role === activeFilter;
     return matchSearch && matchRole;
   });
 
@@ -191,8 +239,21 @@ const UsersPage = () => {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">User Management</h1>
-          <p className="text-muted-foreground text-sm mt-1">{users.length} total users</p>
+          {drillRole ? (
+            <div className="flex items-center gap-2">
+              <button onClick={() => { setDrillRole(null); setFilterRole('all'); window.history.replaceState({}, '', window.location.pathname); }}
+                className="p-1.5 rounded-lg hover:bg-muted"><ChevronLeft className="w-5 h-5" /></button>
+              <div>
+                <h1 className="text-2xl font-bold">{ROLE_CONFIG[drillRole]?.label || drillRole}s</h1>
+                <p className="text-muted-foreground text-sm mt-1">{filteredUsers.length} users</p>
+              </div>
+            </div>
+          ) : (
+            <div>
+              <h1 className="text-2xl font-bold">User Management</h1>
+              <p className="text-muted-foreground text-sm mt-1">{users.length} total users</p>
+            </div>
+          )}
         </div>
         <div className="flex items-center gap-3">
           {canBulkImport && (
@@ -210,12 +271,16 @@ const UsersPage = () => {
         </div>
       </div>
 
+      {/* Clickable Role Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {Object.entries(roleCounts).map(([role, count]) => {
           const cfg = ROLE_CONFIG[role];
           if (!cfg) return null;
           return (
-            <div key={role} className="stat-card flex items-center gap-3 p-4">
+            <button key={role} onClick={() => {
+              if (drillRole === role) { setDrillRole(null); setFilterRole('all'); } else { setDrillRole(role); setFilterRole(role); }
+            }}
+              className={`stat-card flex items-center gap-3 p-4 cursor-pointer hover:shadow-md transition-all text-left ${drillRole === role ? 'ring-2 ring-primary' : ''}`}>
               <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
                 role === 'developer' ? 'bg-gradient-blue' :
                 role === 'super_admin' ? 'bg-gradient-purple' :
@@ -228,23 +293,33 @@ const UsersPage = () => {
                 <p className="text-xl font-bold">{count}</p>
                 <p className="text-xs text-muted-foreground">{cfg.label}s</p>
               </div>
-            </div>
+            </button>
           );
         })}
       </div>
 
-      <div className="flex flex-col sm:flex-row gap-3">
-        <div className="relative flex-1">
+      {!drillRole && (
+        <div className="flex flex-col sm:flex-row gap-3">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by name or email..."
+              className="w-full pl-9 pr-4 py-2.5 rounded-xl border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 text-sm" />
+          </div>
+          <select value={filterRole} onChange={e => setFilterRole(e.target.value)}
+            className="px-4 py-2.5 rounded-xl border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 text-sm">
+            <option value="all">All Roles</option>
+            {showRoles.map(r => <option key={r} value={r}>{ROLE_CONFIG[r]?.label || r}</option>)}
+          </select>
+        </div>
+      )}
+
+      {drillRole && (
+        <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by name or email..."
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder={`Search ${ROLE_CONFIG[drillRole]?.label || ''}s...`}
             className="w-full pl-9 pr-4 py-2.5 rounded-xl border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 text-sm" />
         </div>
-        <select value={filterRole} onChange={e => setFilterRole(e.target.value)}
-          className="px-4 py-2.5 rounded-xl border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 text-sm">
-          <option value="all">All Roles</option>
-          {showRoles.map(r => <option key={r} value={r}>{ROLE_CONFIG[r]?.label || r}</option>)}
-        </select>
-      </div>
+      )}
 
       {loading ? (
         <div className="flex items-center justify-center h-40">
@@ -298,12 +373,23 @@ const UsersPage = () => {
                         </span>
                       </td>
                       <td className="px-6 py-4">
-                        {canDeleteUser(u) && (
-                          <button onClick={() => setDeleteConfirm(u)}
-                            className="p-2 rounded-lg text-destructive hover:bg-destructive/10 transition-colors" title="Remove user">
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        )}
+                        <div className="flex items-center gap-1">
+                          {canEditUsers && (
+                            <button onClick={() => {
+                              setEditUser(u);
+                              setEditForm({ full_name: u.full_name, email: u.email, role: u.role, class_id: u.class_id || '' });
+                            }}
+                              className="p-2 rounded-lg text-muted-foreground hover:bg-muted transition-colors" title="Edit user">
+                              <Pencil className="w-4 h-4" />
+                            </button>
+                          )}
+                          {canDeleteUser(u) && (
+                            <button onClick={() => setDeleteConfirm(u)}
+                              className="p-2 rounded-lg text-destructive hover:bg-destructive/10 transition-colors" title="Remove user">
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   );
@@ -319,6 +405,7 @@ const UsersPage = () => {
         </div>
       )}
 
+      {/* Add User Modal */}
       {showAdd && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
           <div className="bg-card rounded-2xl shadow-xl border border-border w-full max-w-md max-h-[90vh] overflow-y-auto">
@@ -391,6 +478,47 @@ const UsersPage = () => {
                 className="flex-1 py-2.5 rounded-xl bg-gradient-blue text-white font-medium text-sm hover:opacity-90 disabled:opacity-50 flex items-center justify-center gap-2">
                 {adding ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Plus className="w-4 h-4" />}
                 {adding ? 'Creating...' : 'Create User'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit User Modal */}
+      {editUser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+          <div className="bg-card rounded-2xl shadow-xl border border-border w-full max-w-md">
+            <div className="flex items-center justify-between p-6 border-b border-border">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center"><Pencil className="w-5 h-5 text-primary" /></div>
+                <h2 className="text-lg font-bold">Edit User</h2>
+              </div>
+              <button onClick={() => setEditUser(null)} className="p-2 rounded-xl hover:bg-muted"><X className="w-5 h-5" /></button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="text-sm font-semibold mb-1.5 block">Full Name *</label>
+                <input value={editForm.full_name} onChange={e => setEditForm(f => ({ ...f, full_name: e.target.value }))}
+                  className="w-full px-4 py-2.5 rounded-xl border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 text-sm" />
+              </div>
+              <div>
+                <label className="text-sm font-semibold mb-1.5 block">Email</label>
+                <input value={editForm.email} disabled
+                  className="w-full px-4 py-2.5 rounded-xl border border-border bg-muted text-muted-foreground text-sm" />
+              </div>
+              <div>
+                <label className="text-sm font-semibold mb-1.5 block">Role</label>
+                <select value={editForm.role} onChange={e => setEditForm(f => ({ ...f, role: e.target.value }))}
+                  className="w-full px-4 py-2.5 rounded-xl border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 text-sm">
+                  {showRoles.map(r => <option key={r} value={r}>{ROLE_CONFIG[r]?.label || r}</option>)}
+                </select>
+              </div>
+            </div>
+            <div className="flex gap-3 p-6 border-t border-border">
+              <button onClick={() => setEditUser(null)} className="flex-1 py-2.5 rounded-xl border border-border font-medium text-sm hover:bg-muted">Cancel</button>
+              <button onClick={handleEditUser} disabled={editLoading}
+                className="flex-1 py-2.5 rounded-xl bg-primary text-primary-foreground font-medium text-sm hover:opacity-90 disabled:opacity-50 flex items-center justify-center gap-2">
+                {editLoading ? 'Saving...' : 'Save Changes'}
               </button>
             </div>
           </div>
