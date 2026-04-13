@@ -48,44 +48,35 @@ Deno.serve(async (req) => {
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
     const anonKey = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
 
-    const authHeader = req.headers.get('authorization');
-    if (!authHeader) {
-      return new Response(JSON.stringify({ success: false, error: 'Unauthorized' }), {
-        status: 401,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    const supabaseUserClient = createClient(supabaseUrl, anonKey, {
-      global: { headers: { Authorization: authHeader } },
-    });
-
-    const {
-      data: { user },
-      error: userError,
-    } = await supabaseUserClient.auth.getUser();
-
-    if (userError || !user) {
-      return new Response(JSON.stringify({ success: false, error: 'Unauthorized' }), {
-        status: 401,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
     const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey);
+    const authHeader = req.headers.get('authorization');
 
-    const { data: callerProfile } = await supabaseAdmin
-      .from('profiles')
-      .select('role')
-      .eq('user_id', user.id)
-      .maybeSingle();
-
-    const callerRole = callerProfile?.role;
-    if (callerRole !== 'developer' && callerRole !== 'super_admin') {
-      return new Response(JSON.stringify({ success: false, error: 'Forbidden' }), {
-        status: 403,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    if (!authHeader) {
+      // Bootstrap mode: allow only when zero auth users exist
+      const { data: usersListData } = await supabaseAdmin.auth.admin.listUsers();
+      if (usersListData?.users && usersListData.users.length > 0) {
+        return new Response(JSON.stringify({ success: false, error: 'Unauthorized - login required' }), {
+          status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+    } else {
+      const supabaseUserClient = createClient(supabaseUrl, anonKey, {
+        global: { headers: { Authorization: authHeader } },
       });
+      const { data: { user }, error: userError } = await supabaseUserClient.auth.getUser();
+      if (userError || !user) {
+        return new Response(JSON.stringify({ success: false, error: 'Unauthorized' }), {
+          status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      const { data: callerProfile } = await supabaseAdmin
+        .from('profiles').select('role').eq('user_id', user.id).maybeSingle();
+      const callerRole = callerProfile?.role;
+      if (callerRole !== 'developer' && callerRole !== 'super_admin') {
+        return new Response(JSON.stringify({ success: false, error: 'Forbidden' }), {
+          status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
     }
 
     const results = [];
