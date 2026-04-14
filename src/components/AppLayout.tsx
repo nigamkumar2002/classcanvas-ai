@@ -4,7 +4,7 @@ import {
   GraduationCap, LayoutDashboard, BookOpen, Users, Settings,
   LogOut, ChevronLeft, ChevronRight, PlayCircle, FileText,
   BarChart3, School, Upload, ClipboardList, Search, Menu, Calendar, Megaphone,
-  CheckSquare, UserCheck, Award, MessageSquare, DollarSign, Star, Shield, BookMarked, User
+  CheckSquare, UserCheck, Award, MessageSquare, DollarSign, Star, Shield, BookMarked, User, NotebookPen
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
