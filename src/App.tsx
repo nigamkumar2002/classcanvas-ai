@@ -63,7 +63,7 @@ const AppRoutes = () => {
       <Route path="/users" element={wrap(UsersPage, ['developer', 'super_admin', 'admin', 'teacher'])} />
       <Route path="/teachers" element={wrap(UsersPage, ['developer', 'super_admin', 'admin'])} />
       <Route path="/students" element={wrap(UsersPage, ['developer', 'super_admin', 'admin', 'teacher'])} />
-      <Route path="/schools" element={wrap(SchoolsPage, ['developer'])} />
+      <Route path="/schools" element={wrap(SchoolsPage, ['developer', 'super_admin'])} />
       <Route path="/analytics" element={wrap(AnalyticsPage, ['developer', 'super_admin', 'admin'])} />
       <Route path="/settings" element={wrap(SettingsPage)} />
       <Route path="/profile" element={wrap(ProfilePage)} />
