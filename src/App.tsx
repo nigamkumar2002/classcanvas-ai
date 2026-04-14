@@ -25,6 +25,7 @@ import CertificatesPage from "@/pages/CertificatesPage";
 import StudyPlannerPage from "@/pages/StudyPlannerPage";
 import FeedbackPage from "@/pages/FeedbackPage";
 import AuditLogsPage from "@/pages/AuditLogsPage";
+import LessonPlannerPage from "@/pages/LessonPlannerPage";
 import ProfilePage from "@/pages/ProfilePage";
 import NotFound from "./pages/NotFound";
 
@@ -80,6 +81,7 @@ const AppRoutes = () => {
       <Route path="/study-planner" element={wrap(StudyPlannerPage, ['student'])} />
       <Route path="/feedback" element={wrap(FeedbackPage)} />
       <Route path="/audit-logs" element={wrap(AuditLogsPage, ['developer', 'super_admin'])} />
+      <Route path="/lesson-planner" element={wrap(LessonPlannerPage)} />
 
       <Route path="*" element={<NotFound />} />
     </Routes>

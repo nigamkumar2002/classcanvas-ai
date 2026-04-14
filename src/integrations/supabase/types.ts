@@ -597,6 +597,187 @@ export type Database = {
         }
         Relationships: []
       }
+      homework_assignments: {
+        Row: {
+          assigned_date: string
+          attachment_url: string | null
+          class_id: string
+          created_at: string
+          description: string | null
+          due_date: string
+          id: string
+          is_active: boolean
+          lesson_plan_id: string | null
+          max_marks: number | null
+          school_id: string
+          subject_id: string
+          teacher_id: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          assigned_date?: string
+          attachment_url?: string | null
+          class_id: string
+          created_at?: string
+          description?: string | null
+          due_date: string
+          id?: string
+          is_active?: boolean
+          lesson_plan_id?: string | null
+          max_marks?: number | null
+          school_id: string
+          subject_id: string
+          teacher_id: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          assigned_date?: string
+          attachment_url?: string | null
+          class_id?: string
+          created_at?: string
+          description?: string | null
+          due_date?: string
+          id?: string
+          is_active?: boolean
+          lesson_plan_id?: string | null
+          max_marks?: number | null
+          school_id?: string
+          subject_id?: string
+          teacher_id?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "homework_assignments_lesson_plan_id_fkey"
+            columns: ["lesson_plan_id"]
+            isOneToOne: false
+            referencedRelation: "lesson_plans"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      homework_submissions: {
+        Row: {
+          feedback: string | null
+          file_url: string | null
+          grade: number | null
+          graded_at: string | null
+          graded_by: string | null
+          homework_id: string
+          id: string
+          school_id: string
+          status: string
+          student_id: string
+          submission_text: string | null
+          submitted_at: string
+        }
+        Insert: {
+          feedback?: string | null
+          file_url?: string | null
+          grade?: number | null
+          graded_at?: string | null
+          graded_by?: string | null
+          homework_id: string
+          id?: string
+          school_id: string
+          status?: string
+          student_id: string
+          submission_text?: string | null
+          submitted_at?: string
+        }
+        Update: {
+          feedback?: string | null
+          file_url?: string | null
+          grade?: number | null
+          graded_at?: string | null
+          graded_by?: string | null
+          homework_id?: string
+          id?: string
+          school_id?: string
+          status?: string
+          student_id?: string
+          submission_text?: string | null
+          submitted_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "homework_submissions_homework_id_fkey"
+            columns: ["homework_id"]
+            isOneToOne: false
+            referencedRelation: "homework_assignments"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      lesson_plans: {
+        Row: {
+          chapter_id: string | null
+          class_id: string
+          completed_at: string | null
+          created_at: string
+          description: string | null
+          duration_minutes: number
+          id: string
+          is_completed: boolean
+          notes: string | null
+          objectives: string | null
+          period_number: number
+          planned_date: string
+          resources: string | null
+          school_id: string
+          status: string
+          subject_id: string
+          teacher_id: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          chapter_id?: string | null
+          class_id: string
+          completed_at?: string | null
+          created_at?: string
+          description?: string | null
+          duration_minutes?: number
+          id?: string
+          is_completed?: boolean
+          notes?: string | null
+          objectives?: string | null
+          period_number: number
+          planned_date: string
+          resources?: string | null
+          school_id: string
+          status?: string
+          subject_id: string
+          teacher_id: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          chapter_id?: string | null
+          class_id?: string
+          completed_at?: string | null
+          created_at?: string
+          description?: string | null
+          duration_minutes?: number
+          id?: string
+          is_completed?: boolean
+          notes?: string | null
+          objectives?: string | null
+          period_number?: number
+          planned_date?: string
+          resources?: string | null
+          school_id?: string
+          status?: string
+          subject_id?: string
+          teacher_id?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       live_session_participants: {
         Row: {
           approved_at: string | null

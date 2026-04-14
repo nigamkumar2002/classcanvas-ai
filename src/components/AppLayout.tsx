@@ -4,7 +4,7 @@ import {
   GraduationCap, LayoutDashboard, BookOpen, Users, Settings,
   LogOut, ChevronLeft, ChevronRight, PlayCircle, FileText,
   BarChart3, School, Upload, ClipboardList, Search, Menu, Calendar, Megaphone,
-  CheckSquare, UserCheck, Award, MessageSquare, DollarSign, Star, Shield, BookMarked, User
+  CheckSquare, UserCheck, Award, MessageSquare, DollarSign, Star, Shield, BookMarked, User, NotebookPen
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
@@ -20,6 +20,7 @@ const ROLE_MENUS: Record<string, { label: string; icon: React.ElementType; path:
     { label: 'Announcements', icon: Megaphone, path: '/announcements' },
     { label: 'Analytics', icon: BarChart3, path: '/analytics' },
     { label: 'Audit Logs', icon: Shield, path: '/audit-logs' },
+    { label: 'Lesson Planner', icon: NotebookPen, path: '/lesson-planner' },
     { label: 'Settings', icon: Settings, path: '/settings' },
     { label: 'My Profile', icon: User, path: '/profile' },
   ],
@@ -42,6 +43,7 @@ const ROLE_MENUS: Record<string, { label: string; icon: React.ElementType; path:
     { label: 'Analytics', icon: BarChart3, path: '/analytics' },
     { label: 'Feedback', icon: Star, path: '/feedback' },
     { label: 'Audit Logs', icon: Shield, path: '/audit-logs' },
+    { label: 'Lesson Planner', icon: NotebookPen, path: '/lesson-planner' },
     { label: 'Settings', icon: Settings, path: '/settings' },
     { label: 'My Profile', icon: User, path: '/profile' },
   ],
@@ -62,6 +64,7 @@ const ROLE_MENUS: Record<string, { label: string; icon: React.ElementType; path:
     { label: 'Announcements', icon: Megaphone, path: '/announcements' },
     { label: 'Analytics', icon: BarChart3, path: '/analytics' },
     { label: 'Feedback', icon: Star, path: '/feedback' },
+    { label: 'Lesson Planner', icon: NotebookPen, path: '/lesson-planner' },
     { label: 'Settings', icon: Settings, path: '/settings' },
     { label: 'My Profile', icon: User, path: '/profile' },
   ],
@@ -80,6 +83,7 @@ const ROLE_MENUS: Record<string, { label: string; icon: React.ElementType; path:
     { label: 'My Students', icon: Users, path: '/students' },
     { label: 'Announcements', icon: Megaphone, path: '/announcements' },
     { label: 'Feedback', icon: Star, path: '/feedback' },
+    { label: 'Lesson Planner', icon: NotebookPen, path: '/lesson-planner' },
     { label: 'Settings', icon: Settings, path: '/settings' },
     { label: 'My Profile', icon: User, path: '/profile' },
   ],
@@ -95,6 +99,7 @@ const ROLE_MENUS: Record<string, { label: string; icon: React.ElementType; path:
     { label: 'Certificates', icon: Award, path: '/certificates' },
     { label: 'Study Planner', icon: BookMarked, path: '/study-planner' },
     { label: 'Feedback', icon: Star, path: '/feedback' },
+    { label: 'Lesson Planner', icon: NotebookPen, path: '/lesson-planner' },
     { label: 'Calendar', icon: Calendar, path: '/calendar' },
     { label: 'Settings', icon: Settings, path: '/settings' },
     { label: 'My Profile', icon: User, path: '/profile' },
