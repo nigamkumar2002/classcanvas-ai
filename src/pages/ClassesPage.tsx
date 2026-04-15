@@ -16,6 +16,7 @@ interface Class { id: string; name: string; description: string; grade_level: nu
 interface Subject { id: string; class_id: string; name: string; description: string; color: string; is_active?: boolean; teacher_id?: string; }
 interface Chapter { id: string; subject_id: string; name: string; description: string; order_index: number; is_active?: boolean; }
 interface Material { id: string; chapter_id: string; title: string; type: string; file_url?: string; file_type?: string; is_active: boolean; }
+interface DayPlan { id: string; chapter_id: string | null; day_number: number | null; title: string; description: string | null; file_url: string | null; file_name: string | null; file_type: string | null; is_completed: boolean; status: string; }
 
 const TYPE_CONFIG: Record<string, { label: string; icon: React.ElementType }> = {
   theory: { label: 'Theory', icon: BookOpen },
