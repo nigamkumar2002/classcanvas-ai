@@ -42,6 +42,7 @@ const ClassesPage = () => {
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [chapters, setChapters] = useState<Chapter[]>([]);
   const [materials, setMaterials] = useState<Material[]>([]);
+  const [dayPlans, setDayPlans] = useState<DayPlan[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedClasses, setExpandedClasses] = useState<Set<string>>(new Set());
   const [expandedSubjects, setExpandedSubjects] = useState<Set<string>>(new Set());
