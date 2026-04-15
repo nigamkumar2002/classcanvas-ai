@@ -718,8 +718,12 @@ export type Database = {
           class_id: string
           completed_at: string | null
           created_at: string
+          day_number: number | null
           description: string | null
           duration_minutes: number
+          file_name: string | null
+          file_type: string | null
+          file_url: string | null
           id: string
           is_completed: boolean
           notes: string | null
@@ -739,14 +743,18 @@ export type Database = {
           class_id: string
           completed_at?: string | null
           created_at?: string
+          day_number?: number | null
           description?: string | null
           duration_minutes?: number
+          file_name?: string | null
+          file_type?: string | null
+          file_url?: string | null
           id?: string
           is_completed?: boolean
           notes?: string | null
           objectives?: string | null
-          period_number: number
-          planned_date: string
+          period_number?: number
+          planned_date?: string
           resources?: string | null
           school_id: string
           status?: string
@@ -760,8 +768,12 @@ export type Database = {
           class_id?: string
           completed_at?: string | null
           created_at?: string
+          day_number?: number | null
           description?: string | null
           duration_minutes?: number
+          file_name?: string | null
+          file_type?: string | null
+          file_url?: string | null
           id?: string
           is_completed?: boolean
           notes?: string | null

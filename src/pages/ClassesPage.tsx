@@ -9,12 +9,14 @@ import {
 import { cn } from '@/lib/utils';
 import ContentUploadModal from '@/components/ContentUploadModal';
 import PDFViewerModal from '@/components/PDFViewerModal';
+import DayPlanSection from '@/components/DayPlanSection';
 import { toast } from '@/hooks/use-toast';
 
 interface Class { id: string; name: string; description: string; grade_level: number; is_active: boolean; }
 interface Subject { id: string; class_id: string; name: string; description: string; color: string; is_active?: boolean; teacher_id?: string; }
 interface Chapter { id: string; subject_id: string; name: string; description: string; order_index: number; is_active?: boolean; }
 interface Material { id: string; chapter_id: string; title: string; type: string; file_url?: string; file_type?: string; is_active: boolean; }
+interface DayPlan { id: string; chapter_id: string | null; day_number: number | null; title: string; description: string | null; file_url: string | null; file_name: string | null; file_type: string | null; is_completed: boolean; status: string; }
 
 const TYPE_CONFIG: Record<string, { label: string; icon: React.ElementType }> = {
   theory: { label: 'Theory', icon: BookOpen },
@@ -40,6 +42,7 @@ const ClassesPage = () => {
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [chapters, setChapters] = useState<Chapter[]>([]);
   const [materials, setMaterials] = useState<Material[]>([]);
+  const [dayPlans, setDayPlans] = useState<DayPlan[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedClasses, setExpandedClasses] = useState<Set<string>>(new Set());
   const [expandedSubjects, setExpandedSubjects] = useState<Set<string>>(new Set());
@@ -127,16 +130,18 @@ const ClassesPage = () => {
         return allRows;
       };
 
-      const [cls, subs, chps, mats] = await Promise.all([
+      const [cls, subs, chps, mats, plans] = await Promise.all([
         fetchAllRows('classes', 'grade_level'),
         fetchAllRows('subjects'),
         fetchAllRows('chapters', 'order_index'),
         fetchAllRows('materials'),
+        fetchAllRows('lesson_plans', 'day_number'),
       ]);
       setClasses(cls || []);
       setSubjects(subs || []);
       setChapters(chps || []);
       setMaterials(mats || []);
+      setDayPlans(plans || []);
     } catch (error) {
       console.error('Error fetching data:', error);
     } finally {
@@ -577,30 +582,43 @@ const ClassesPage = () => {
                                     )}
                                   </div>
 
-                                  {isChpOpen && chpMaterials.length > 0 && (
-                                    <div className="pl-20 pb-2 space-y-1">
-                                      {chpMaterials.map(mat => {
-                                        const cfg = TYPE_CONFIG[mat.type] || TYPE_CONFIG.theory;
-                                        const matPending = mat.is_active === false;
-                                        return (
-                                          <div key={mat.id} className={cn("flex items-center gap-2 p-2 rounded-lg hover:bg-muted/20 transition-colors group", matPending && "opacity-60")}>
-                                            <cfg.icon className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
-                                            <button onClick={() => mat.file_url && setPdfModal({ open: true, material: mat })}
-                                              className="text-xs font-medium text-left truncate flex-1 hover:text-primary transition-colors">{mat.title}</button>
-                                            {matPending && (
-                                              <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-amber-100 text-amber-700">Pending</span>
-                                            )}
-                                            <span className="text-[10px] text-muted-foreground capitalize">{mat.type?.replace('_', ' ')}</span>
-                                            {canDelete && (
-                                              <button onClick={() => handleDeleteMaterial(mat.id, mat.title)} disabled={operationInProgress}
-                                                className="opacity-0 group-hover:opacity-100 px-1 py-0.5 rounded text-xs text-destructive hover:bg-destructive/10 disabled:opacity-50">
-                                                <Trash2 className="w-3 h-3" />
-                                              </button>
-                                            )}
-                                          </div>
-                                        );
-                                      })}
-                                    </div>
+                                  {isChpOpen && (
+                                    <>
+                                      {chpMaterials.length > 0 && (
+                                        <div className="pl-20 pb-2 space-y-1">
+                                          {chpMaterials.map(mat => {
+                                            const cfg = TYPE_CONFIG[mat.type] || TYPE_CONFIG.theory;
+                                            const matPending = mat.is_active === false;
+                                            return (
+                                              <div key={mat.id} className={cn("flex items-center gap-2 p-2 rounded-lg hover:bg-muted/20 transition-colors group", matPending && "opacity-60")}>
+                                                <cfg.icon className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
+                                                <button onClick={() => mat.file_url && setPdfModal({ open: true, material: mat })}
+                                                  className="text-xs font-medium text-left truncate flex-1 hover:text-primary transition-colors">{mat.title}</button>
+                                                {matPending && (
+                                                  <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-amber-100 text-amber-700">Pending</span>
+                                                )}
+                                                <span className="text-[10px] text-muted-foreground capitalize">{mat.type?.replace('_', ' ')}</span>
+                                                {canDelete && (
+                                                  <button onClick={() => handleDeleteMaterial(mat.id, mat.title)} disabled={operationInProgress}
+                                                    className="opacity-0 group-hover:opacity-100 px-1 py-0.5 rounded text-xs text-destructive hover:bg-destructive/10 disabled:opacity-50">
+                                                    <Trash2 className="w-3 h-3" />
+                                                  </button>
+                                                )}
+                                              </div>
+                                            );
+                                          })}
+                                        </div>
+                                      )}
+                                      <DayPlanSection
+                                        chapterId={chp.id}
+                                        subjectId={chp.subject_id}
+                                        classId={sub.class_id}
+                                        dayPlans={dayPlans}
+                                        canEdit={canEdit}
+                                        canDelete={canDelete}
+                                        onRefresh={fetchAll}
+                                      />
+                                    </>
                                   )}
                                 </div>
                               );
