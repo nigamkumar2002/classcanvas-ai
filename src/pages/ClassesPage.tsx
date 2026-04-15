@@ -503,7 +503,7 @@ const ClassesPage = () => {
                   {classSubjects.length === 0 ? (
                     <div className="p-4 pl-8 text-muted-foreground text-sm">No subjects yet.</div>
                   ) : classSubjects.map(sub => {
-                    const subChapters = visibleChapters.filter(c => c.subject_id === sub.id).sort((a, b) => (a.order_index || 0) - (b.order_index || 0));
+                    const subChapters = visibleChapters.filter(c => c.subject_id === sub.id).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
                     const isSubOpen = expandedSubjects.has(sub.id);
 
                     return (
@@ -552,7 +552,6 @@ const ClassesPage = () => {
                                 <div key={chp.id}>
                                   <div className="flex items-center gap-2 p-2.5 pl-14 hover:bg-muted/10 transition-colors">
                                     <button onClick={() => setExpandedChapters(toggle(expandedChapters, chp.id))} className="flex items-center gap-2 flex-1 text-left min-w-0">
-                                      <span className="text-xs text-muted-foreground font-mono w-5 text-right flex-shrink-0">{idx + 1}.</span>
                                       <FileText className="w-4 h-4 text-muted-foreground flex-shrink-0" />
                                       <span className="text-sm font-medium">{chp.name}</span>
                                       <span className="text-xs text-muted-foreground">({chpMaterials.length})</span>
