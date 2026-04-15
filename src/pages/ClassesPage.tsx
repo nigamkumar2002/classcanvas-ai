@@ -9,6 +9,7 @@ import {
 import { cn } from '@/lib/utils';
 import ContentUploadModal from '@/components/ContentUploadModal';
 import PDFViewerModal from '@/components/PDFViewerModal';
+import DayPlanSection from '@/components/DayPlanSection';
 import { toast } from '@/hooks/use-toast';
 
 interface Class { id: string; name: string; description: string; grade_level: number; is_active: boolean; }
