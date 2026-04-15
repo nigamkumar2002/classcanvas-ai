@@ -130,16 +130,18 @@ const ClassesPage = () => {
         return allRows;
       };
 
-      const [cls, subs, chps, mats] = await Promise.all([
+      const [cls, subs, chps, mats, plans] = await Promise.all([
         fetchAllRows('classes', 'grade_level'),
         fetchAllRows('subjects'),
         fetchAllRows('chapters', 'order_index'),
         fetchAllRows('materials'),
+        fetchAllRows('lesson_plans', 'day_number'),
       ]);
       setClasses(cls || []);
       setSubjects(subs || []);
       setChapters(chps || []);
       setMaterials(mats || []);
+      setDayPlans(plans || []);
     } catch (error) {
       console.error('Error fetching data:', error);
     } finally {
