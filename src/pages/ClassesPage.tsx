@@ -543,7 +543,7 @@ const ClassesPage = () => {
                           <div>
                             {subChapters.length === 0 ? (
                               <div className="pl-14 p-3 text-xs text-muted-foreground">No chapters yet.</div>
-                            ) : subChapters.map((chp, idx) => {
+                            ) : subChapters.map((chp) => {
                               const chpMaterials = visibleMaterials.filter(m => m.chapter_id === chp.id);
                               const isChpOpen = expandedChapters.has(chp.id);
                               const chpPending = chp.is_active === false;
