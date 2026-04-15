@@ -582,30 +582,43 @@ const ClassesPage = () => {
                                     )}
                                   </div>
 
-                                  {isChpOpen && chpMaterials.length > 0 && (
-                                    <div className="pl-20 pb-2 space-y-1">
-                                      {chpMaterials.map(mat => {
-                                        const cfg = TYPE_CONFIG[mat.type] || TYPE_CONFIG.theory;
-                                        const matPending = mat.is_active === false;
-                                        return (
-                                          <div key={mat.id} className={cn("flex items-center gap-2 p-2 rounded-lg hover:bg-muted/20 transition-colors group", matPending && "opacity-60")}>
-                                            <cfg.icon className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
-                                            <button onClick={() => mat.file_url && setPdfModal({ open: true, material: mat })}
-                                              className="text-xs font-medium text-left truncate flex-1 hover:text-primary transition-colors">{mat.title}</button>
-                                            {matPending && (
-                                              <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-amber-100 text-amber-700">Pending</span>
-                                            )}
-                                            <span className="text-[10px] text-muted-foreground capitalize">{mat.type?.replace('_', ' ')}</span>
-                                            {canDelete && (
-                                              <button onClick={() => handleDeleteMaterial(mat.id, mat.title)} disabled={operationInProgress}
-                                                className="opacity-0 group-hover:opacity-100 px-1 py-0.5 rounded text-xs text-destructive hover:bg-destructive/10 disabled:opacity-50">
-                                                <Trash2 className="w-3 h-3" />
-                                              </button>
-                                            )}
-                                          </div>
-                                        );
-                                      })}
-                                    </div>
+                                  {isChpOpen && (
+                                    <>
+                                      {chpMaterials.length > 0 && (
+                                        <div className="pl-20 pb-2 space-y-1">
+                                          {chpMaterials.map(mat => {
+                                            const cfg = TYPE_CONFIG[mat.type] || TYPE_CONFIG.theory;
+                                            const matPending = mat.is_active === false;
+                                            return (
+                                              <div key={mat.id} className={cn("flex items-center gap-2 p-2 rounded-lg hover:bg-muted/20 transition-colors group", matPending && "opacity-60")}>
+                                                <cfg.icon className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
+                                                <button onClick={() => mat.file_url && setPdfModal({ open: true, material: mat })}
+                                                  className="text-xs font-medium text-left truncate flex-1 hover:text-primary transition-colors">{mat.title}</button>
+                                                {matPending && (
+                                                  <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-amber-100 text-amber-700">Pending</span>
+                                                )}
+                                                <span className="text-[10px] text-muted-foreground capitalize">{mat.type?.replace('_', ' ')}</span>
+                                                {canDelete && (
+                                                  <button onClick={() => handleDeleteMaterial(mat.id, mat.title)} disabled={operationInProgress}
+                                                    className="opacity-0 group-hover:opacity-100 px-1 py-0.5 rounded text-xs text-destructive hover:bg-destructive/10 disabled:opacity-50">
+                                                    <Trash2 className="w-3 h-3" />
+                                                  </button>
+                                                )}
+                                              </div>
+                                            );
+                                          })}
+                                        </div>
+                                      )}
+                                      <DayPlanSection
+                                        chapterId={chp.id}
+                                        subjectId={chp.subject_id}
+                                        classId={sub.class_id}
+                                        dayPlans={dayPlans}
+                                        canEdit={canEdit}
+                                        canDelete={canDelete}
+                                        onRefresh={fetchAll}
+                                      />
+                                    </>
                                   )}
                                 </div>
                               );
