@@ -38,6 +38,17 @@ const CreateExamModal: React.FC<Props> = ({ onClose, onCreated }) => {
   const [aiDifficulty, setAiDifficulty] = useState('medium');
   const [genMode, setGenMode] = useState<GenMode>('ai');
 
+  // Scheduling
+  const [publishMode, setPublishMode] = useState<'instant' | 'scheduled'>('instant');
+  const [scheduledDate, setScheduledDate] = useState('');
+  const [scheduledStartTime, setScheduledStartTime] = useState('');
+  const [scheduledEndTime, setScheduledEndTime] = useState('');
+  const [leaderboardVisible, setLeaderboardVisible] = useState(false);
+
+  // Day plans
+  const [dayPlans, setDayPlans] = useState<any[]>([]);
+  const [selectedDayPlan, setSelectedDayPlan] = useState('');
+
   // Document upload state
   const [docText, setDocText] = useState('');
   const [docFile, setDocFile] = useState<File | null>(null);
