@@ -411,12 +411,69 @@ const CreateExamModal: React.FC<Props> = ({ onClose, onCreated }) => {
                 </div>
               </div>
 
+              {/* Day Plan link (optional) */}
+              {dayPlans.length > 0 && (
+                <div>
+                  <label className="text-sm font-medium mb-1.5 block">Link to Day Plan (optional)</label>
+                  <select value={selectedDayPlan} onChange={e => setSelectedDayPlan(e.target.value)}
+                    className="w-full px-3 py-2.5 rounded-xl border border-border bg-background text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none">
+                    <option value="">No day plan linked</option>
+                    {dayPlans.map((dp: any) => <option key={dp.id} value={dp.id}>Day {dp.day_number}: {dp.title}</option>)}
+                  </select>
+                </div>
+              )}
+
+              {/* Publish mode */}
+              <div>
+                <label className="text-sm font-medium mb-2 block">Publish Mode</label>
+                <div className="grid grid-cols-2 gap-3">
+                  <button type="button" onClick={() => setPublishMode('instant')}
+                    className={`p-3 rounded-xl border-2 text-left transition-all ${publishMode === 'instant' ? 'border-primary bg-primary/5' : 'border-border'}`}>
+                    <p className="font-semibold text-sm">Publish Instantly</p>
+                    <p className="text-[10px] text-muted-foreground">Available immediately</p>
+                  </button>
+                  <button type="button" onClick={() => setPublishMode('scheduled')}
+                    className={`p-3 rounded-xl border-2 text-left transition-all ${publishMode === 'scheduled' ? 'border-primary bg-primary/5' : 'border-border'}`}>
+                    <p className="font-semibold text-sm">Schedule</p>
+                    <p className="text-[10px] text-muted-foreground">Set date & time window</p>
+                  </button>
+                </div>
+              </div>
+
+              {publishMode === 'scheduled' && (
+                <div className="grid sm:grid-cols-3 gap-3 bg-muted/30 p-4 rounded-xl border border-border">
+                  <div>
+                    <label className="text-xs font-medium mb-1 block">Date *</label>
+                    <input type="date" value={scheduledDate} onChange={e => setScheduledDate(e.target.value)}
+                      className="w-full px-3 py-2 rounded-lg border border-border bg-background text-sm" />
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium mb-1 block">Start Time</label>
+                    <input type="time" value={scheduledStartTime} onChange={e => setScheduledStartTime(e.target.value)}
+                      className="w-full px-3 py-2 rounded-lg border border-border bg-background text-sm" />
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium mb-1 block">End Time</label>
+                    <input type="time" value={scheduledEndTime} onChange={e => setScheduledEndTime(e.target.value)}
+                      className="w-full px-3 py-2 rounded-lg border border-border bg-background text-sm" />
+                  </div>
+                </div>
+              )}
+
+              {/* Leaderboard toggle */}
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input type="checkbox" checked={leaderboardVisible} onChange={e => setLeaderboardVisible(e.target.checked)}
+                  className="w-4 h-4 rounded border-border" />
+                <span className="text-sm">Allow students to see class rankings after exam</span>
+              </label>
+
               <div className="flex justify-end">
-                <button onClick={() => setStep('questions')} disabled={!selectedChapter || !title}
+                <button onClick={() => setStep('questions')} disabled={!selectedChapter || !title || (publishMode === 'scheduled' && !scheduledDate)}
                   className="px-6 py-2.5 rounded-xl bg-primary text-primary-foreground font-semibold text-sm hover:opacity-90 transition-all disabled:opacity-40">
                   Next: Add Questions →
                 </button>
               </div>
+
             </div>
           ) : (
             <div className="space-y-5">
