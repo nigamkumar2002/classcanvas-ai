@@ -407,11 +407,17 @@ export type Database = {
           chapter_id: string
           created_at: string
           created_by: string | null
+          day_plan_id: string | null
           description: string | null
           duration_minutes: number
           id: string
           is_active: boolean
+          leaderboard_visible: boolean
           pass_marks: number
+          publish_status: string
+          scheduled_date: string | null
+          scheduled_end_time: string | null
+          scheduled_start_time: string | null
           school_id: string | null
           title: string
           topic: string | null
@@ -421,11 +427,17 @@ export type Database = {
           chapter_id: string
           created_at?: string
           created_by?: string | null
+          day_plan_id?: string | null
           description?: string | null
           duration_minutes?: number
           id?: string
           is_active?: boolean
+          leaderboard_visible?: boolean
           pass_marks?: number
+          publish_status?: string
+          scheduled_date?: string | null
+          scheduled_end_time?: string | null
+          scheduled_start_time?: string | null
           school_id?: string | null
           title: string
           topic?: string | null
@@ -435,11 +447,17 @@ export type Database = {
           chapter_id?: string
           created_at?: string
           created_by?: string | null
+          day_plan_id?: string | null
           description?: string | null
           duration_minutes?: number
           id?: string
           is_active?: boolean
+          leaderboard_visible?: boolean
           pass_marks?: number
+          publish_status?: string
+          scheduled_date?: string | null
+          scheduled_end_time?: string | null
+          scheduled_start_time?: string | null
           school_id?: string | null
           title?: string
           topic?: string | null
