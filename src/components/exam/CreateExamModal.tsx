@@ -74,6 +74,14 @@ const CreateExamModal: React.FC<Props> = ({ onClose, onCreated }) => {
     setSelectedChapter('');
   }, [selectedSubject]);
 
+  // Fetch day plans when chapter is selected
+  useEffect(() => {
+    if (!selectedChapter) { setDayPlans([]); return; }
+    (supabase as any).from('lesson_plans').select('id, day_number, title').eq('chapter_id', selectedChapter).order('day_number')
+      .then(({ data }: any) => setDayPlans(data || []));
+  }, [selectedChapter]);
+
+
   const addBlankQuestion = () => {
     setQuestions(prev => [...prev, {
       question_text: '', option_a: '', option_b: '', option_c: '', option_d: '',
