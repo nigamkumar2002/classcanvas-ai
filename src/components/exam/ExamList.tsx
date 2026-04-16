@@ -1,5 +1,5 @@
 import React from 'react';
-import { ClipboardList, Timer, BookOpen, Plus, Loader2, Trash2, Clock, CheckCircle } from 'lucide-react';
+import { ClipboardList, Timer, BookOpen, Plus, Loader2, Trash2, Clock, CheckCircle, CalendarClock, Lock } from 'lucide-react';
 import type { ExamData } from '@/pages/ExamPage';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
@@ -12,29 +12,42 @@ interface Props {
   onStartExam: (exam: ExamData) => void;
   onCreateExam: () => void;
   onRefresh?: () => void;
+  isExamAccessible?: (exam: ExamData) => { accessible: boolean; reason: string };
 }
 
-const ExamList: React.FC<Props> = ({ exams, loading, canManage, onStartExam, onCreateExam, onRefresh }) => {
+const ExamList: React.FC<Props> = ({ exams, loading, canManage, onStartExam, onCreateExam, onRefresh, isExamAccessible }) => {
   const { user } = useAuth();
   const isStudent = user?.role === 'student';
 
-  const canDeleteExam = (exam: ExamData) => {
-    if (user?.role === 'developer' || user?.role === 'super_admin') return true;
-    if (user?.role === 'admin' && exam.created_by !== user?.user_id) return true;
-    if (exam.created_by === user?.user_id) return true;
-    return false;
+  const canDeleteExam = () => {
+    return user?.role === 'developer' || user?.role === 'super_admin' || user?.role === 'admin';
   };
 
   const handleDelete = async (examId: string) => {
-    if (!confirm('Are you sure you want to delete this exam and all its questions?')) return;
+    const confirmText = prompt('Type "DELETE" to permanently remove this exam and all its results:');
+    if (confirmText !== 'DELETE') { toast.error('Deletion cancelled'); return; }
     try {
-      await supabase.from('questions').delete().eq('exam_id', examId);
-      await supabase.from('exams').delete().eq('id', examId);
-      toast.success('Exam deleted');
+      const { error } = await supabase.from('exams').delete().eq('id', examId);
+      if (error) throw error;
+      toast.success('Exam permanently deleted');
       onRefresh?.();
     } catch {
       toast.error('Failed to delete exam');
     }
+  };
+
+  const getStatusBadge = (exam: ExamData) => {
+    if (!exam.is_active) return { label: 'Pending Approval', color: 'bg-amber-100 text-amber-700', icon: Clock };
+
+    const ps = (exam as any).publish_status;
+    if (ps === 'scheduled' && exam.scheduled_date) {
+      const date = new Date(exam.scheduled_date);
+      return {
+        label: `Scheduled: ${date.toLocaleDateString()}${exam.scheduled_start_time ? ` ${exam.scheduled_start_time}` : ''}`,
+        color: 'bg-blue-100 text-blue-700', icon: CalendarClock,
+      };
+    }
+    return { label: 'Published', color: 'bg-green-100 text-green-700', icon: CheckCircle };
   };
 
   if (loading) return (
@@ -67,44 +80,48 @@ const ExamList: React.FC<Props> = ({ exams, loading, canManage, onStartExam, onC
         </div>
       ) : (
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {exams.map(exam => (
-            <div key={exam.id} className="bg-card rounded-2xl border border-border p-5 flex flex-col">
-              <div className="flex items-start justify-between mb-4">
-                <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center">
-                  <ClipboardList className="w-6 h-6 text-primary" />
-                </div>
-                <div className="flex items-center gap-2">
-                  {exam.is_active ? (
-                    <span className="flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700">
-                      <CheckCircle className="w-3 h-3" /> Published
+          {exams.map(exam => {
+            const status = getStatusBadge(exam);
+            const access = isExamAccessible ? isExamAccessible(exam) : { accessible: true, reason: '' };
+            const locked = isStudent && !access.accessible;
+
+            return (
+              <div key={exam.id} className={`bg-card rounded-2xl border border-border p-5 flex flex-col ${locked ? 'opacity-70' : ''}`}>
+                <div className="flex items-start justify-between mb-4">
+                  <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center">
+                    {locked ? <Lock className="w-6 h-6 text-muted-foreground" /> : <ClipboardList className="w-6 h-6 text-primary" />}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${status.color}`}>
+                      <status.icon className="w-3 h-3" /> {status.label}
                     </span>
-                  ) : (
-                    <span className="flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-700">
-                      <Clock className="w-3 h-3" /> Pending Approval
-                    </span>
-                  )}
-                  {canManage && canDeleteExam(exam) && (
-                    <button onClick={() => handleDelete(exam.id)} className="p-1 text-destructive hover:bg-destructive/10 rounded-lg transition-colors">
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  )}
+                    {canManage && canDeleteExam() && (
+                      <button onClick={() => handleDelete(exam.id)} className="p-1 text-destructive hover:bg-destructive/10 rounded-lg transition-colors" title="Delete exam permanently">
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
                 </div>
+                <h3 className="font-bold text-sm mb-1 line-clamp-2">{exam.title}</h3>
+                {exam.description && <p className="text-xs text-muted-foreground mb-3 line-clamp-2">{exam.description}</p>}
+                <div className="flex items-center gap-3 text-xs text-muted-foreground mb-4 mt-auto">
+                  <span className="flex items-center gap-1"><Timer className="w-3.5 h-3.5" />{exam.duration_minutes} min</span>
+                  <span className="flex items-center gap-1"><BookOpen className="w-3.5 h-3.5" />{exam.total_marks} marks</span>
+                  <span>Pass: {exam.pass_marks}</span>
+                </div>
+                {locked ? (
+                  <div className="w-full py-2.5 rounded-xl bg-muted text-muted-foreground text-sm font-medium text-center">
+                    <Lock className="w-3.5 h-3.5 inline mr-1" /> {access.reason}
+                  </div>
+                ) : (exam.is_active || canManage) ? (
+                  <button onClick={() => onStartExam(exam)}
+                    className="w-full py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:opacity-90 transition-all">
+                    {isStudent ? 'Start Exam' : 'Preview Exam'}
+                  </button>
+                ) : null}
               </div>
-              <h3 className="font-bold text-sm mb-1 line-clamp-2">{exam.title}</h3>
-              {exam.description && <p className="text-xs text-muted-foreground mb-3 line-clamp-2">{exam.description}</p>}
-              <div className="flex items-center gap-3 text-xs text-muted-foreground mb-4 mt-auto">
-                <span className="flex items-center gap-1"><Timer className="w-3.5 h-3.5" />{exam.duration_minutes} min</span>
-                <span className="flex items-center gap-1"><BookOpen className="w-3.5 h-3.5" />{exam.total_marks} marks</span>
-                <span>Pass: {exam.pass_marks}</span>
-              </div>
-              {(exam.is_active || canManage) && (
-                <button onClick={() => onStartExam(exam)}
-                  className="w-full py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:opacity-90 transition-all">
-                  {isStudent ? 'Start Exam' : 'Preview Exam'}
-                </button>
-              )}
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
