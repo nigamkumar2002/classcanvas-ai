@@ -283,6 +283,12 @@ const CreateExamModal: React.FC<Props> = ({ onClose, onCreated }) => {
         school_id: user?.school_id || null,
         is_active: !needsApproval,
         topic: topic || null,
+        publish_status: publishMode === 'scheduled' ? 'scheduled' : needsApproval ? 'draft' : 'published',
+        scheduled_date: publishMode === 'scheduled' ? scheduledDate : null,
+        scheduled_start_time: publishMode === 'scheduled' && scheduledStartTime ? scheduledStartTime : null,
+        scheduled_end_time: publishMode === 'scheduled' && scheduledEndTime ? scheduledEndTime : null,
+        day_plan_id: selectedDayPlan || null,
+        leaderboard_visible: leaderboardVisible,
       } as any).select().single();
 
       if (examError) throw examError;
