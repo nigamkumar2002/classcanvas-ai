@@ -1,62 +1,89 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from '@/hooks/use-toast';
-import { Plus, Trash2, Pencil, Camera, Upload, FileText, CheckCircle, Circle, X, Image } from 'lucide-react';
+import { Plus, Trash2, Pencil, Camera, Upload, FileText, CheckCircle, Circle, X, Image as ImageIcon, NotebookPen, Lock, Clock, Check, AlertCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import LexicalNotepad from '@/components/notepad/LexicalNotepad';
 
 interface DayPlan {
-  id: string;
-  chapter_id: string | null;
-  day_number: number | null;
-  title: string;
-  description: string | null;
-  file_url: string | null;
-  file_name: string | null;
-  file_type: string | null;
-  is_completed: boolean;
-  status: string;
+  id: string; chapter_id: string | null; day_number: number | null;
+  title: string; description: string | null; file_url: string | null;
+  file_name: string | null; file_type: string | null; is_completed: boolean; status: string;
+  notepad_content?: any; approval_status?: string; teacher_id?: string;
 }
 
+interface Attachment { id: string; file_url: string; file_name: string; file_type: string | null; }
+
 interface Props {
-  chapterId: string;
-  subjectId: string;
-  classId: string;
-  dayPlans: DayPlan[];
-  canEdit: boolean;
-  canDelete: boolean;
-  onRefresh: () => void;
+  chapterId: string; subjectId: string; classId: string;
+  dayPlans: DayPlan[]; canEdit: boolean; canDelete: boolean; onRefresh: () => void;
 }
 
 const DayPlanSection: React.FC<Props> = ({ chapterId, subjectId, classId, dayPlans, canEdit, canDelete, onRefresh }) => {
   const { user } = useAuth();
   const [showAdd, setShowAdd] = useState(false);
   const [editingPlan, setEditingPlan] = useState<DayPlan | null>(null);
+  const [openNotepadFor, setOpenNotepadFor] = useState<DayPlan | null>(null);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [file, setFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
   const [saving, setSaving] = useState(false);
+  const [editLocked, setEditLocked] = useState(false);
+  const [autoApprove, setAutoApprove] = useState(true);
+  const [attachmentsByPlan, setAttachmentsByPlan] = useState<Record<string, Attachment[]>>({});
+
+  const isAdminRole = user?.role === 'admin' || user?.role === 'super_admin' || user?.role === 'developer';
+
+  // Load school settings
+  useEffect(() => {
+    (async () => {
+      if (!user?.school_id) return;
+      const { data } = await supabase.from('school_settings').select('key, value')
+        .eq('school_id', user.school_id).in('key', ['lesson_plan_editable', 'auto_approve_lesson_plans', 'lesson_plan_admin_editable']);
+      const map = new Map((data || []).map((s: any) => [s.key, s.value]));
+      const editable = user?.role === 'teacher' ? map.get('lesson_plan_editable') : map.get('lesson_plan_admin_editable');
+      setEditLocked(editable === false);
+      setAutoApprove(map.get('auto_approve_lesson_plans') !== false);
+    })();
+  }, [user?.school_id, user?.role]);
 
   const chapterPlans = dayPlans
     .filter(p => p.chapter_id === chapterId)
     .sort((a, b) => (a.day_number || 0) - (b.day_number || 0));
+
+  // Load attachments for these plans
+  useEffect(() => {
+    if (chapterPlans.length === 0) return;
+    (async () => {
+      const ids = chapterPlans.map(p => p.id);
+      const { data } = await supabase.from('lesson_plan_attachments').select('*').in('lesson_plan_id', ids).order('order_index');
+      const m: Record<string, Attachment[]> = {};
+      (data || []).forEach((a: any) => { (m[a.lesson_plan_id] ||= []).push(a); });
+      setAttachmentsByPlan(m);
+    })();
+  }, [chapterPlans.length, chapterId]);
 
   const nextDayNumber = chapterPlans.length > 0
     ? Math.max(...chapterPlans.map(p => p.day_number || 0)) + 1
     : 1;
 
   const resetForm = () => {
-    setTitle(''); setDescription(''); setFile(null);
+    setTitle(''); setDescription(''); setFiles([]);
     setShowAdd(false); setEditingPlan(null);
   };
 
-  const uploadFile = async (f: File) => {
-    const ext = f.name.split('.').pop();
-    const path = `day-plans/${chapterId}/${Date.now()}.${ext}`;
-    const { error } = await supabase.storage.from('lms-materials').upload(path, f);
-    if (error) throw error;
-    const { data } = supabase.storage.from('lms-materials').getPublicUrl(path);
-    return { url: data.publicUrl, name: f.name, type: f.type };
+  const uploadFiles = async (fs: File[]) => {
+    const uploaded = [];
+    for (const f of fs) {
+      const ext = f.name.split('.').pop();
+      const path = `day-plans/${chapterId}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+      const { error } = await supabase.storage.from('lms-materials').upload(path, f);
+      if (error) throw error;
+      const { data } = supabase.storage.from('lms-materials').getPublicUrl(path);
+      uploaded.push({ url: data.publicUrl, name: f.name, type: f.type });
+    }
+    return uploaded;
   };
 
   const handleSave = async () => {
@@ -64,39 +91,42 @@ const DayPlanSection: React.FC<Props> = ({ chapterId, subjectId, classId, dayPla
     if (!user?.school_id) return;
     setSaving(true);
     try {
-      let fileData: { url: string; name: string; type: string } | null = null;
-      if (file) fileData = await uploadFile(file);
+      let planId = editingPlan?.id;
+      const approvalStatus = autoApprove ? 'approved' : 'pending';
 
       if (editingPlan) {
-        const updateData: any = { title: title.trim(), description: description.trim() || null };
-        if (fileData) {
-          updateData.file_url = fileData.url;
-          updateData.file_name = fileData.name;
-          updateData.file_type = fileData.type;
-        }
-        const { error } = await supabase.from('lesson_plans').update(updateData).eq('id', editingPlan.id);
+        const { error } = await supabase.from('lesson_plans').update({
+          title: title.trim(), description: description.trim() || null,
+          approval_status: autoApprove ? editingPlan.approval_status || 'approved' : 'pending',
+        }).eq('id', editingPlan.id);
         if (error) throw error;
-        toast({ title: 'Plan updated' });
       } else {
-        const { error } = await (supabase as any).from('lesson_plans').insert({
-          chapter_id: chapterId,
-          subject_id: subjectId,
-          class_id: classId,
-          teacher_id: user.user_id,
-          school_id: user.school_id,
-          day_number: nextDayNumber,
-          title: title.trim(),
+        const { data, error } = await (supabase as any).from('lesson_plans').insert({
+          chapter_id: chapterId, subject_id: subjectId, class_id: classId,
+          teacher_id: user.user_id, school_id: user.school_id,
+          day_number: nextDayNumber, title: title.trim(),
           description: description.trim() || null,
-          file_url: fileData?.url || null,
-          file_name: fileData?.name || null,
-          file_type: fileData?.type || null,
           planned_date: new Date().toISOString().split('T')[0],
-          period_number: 1,
-          status: 'planned',
-        });
+          period_number: 1, status: 'planned',
+          approval_status: approvalStatus,
+        }).select().single();
         if (error) throw error;
-        toast({ title: `Day ${nextDayNumber} plan added` });
+        planId = data.id;
       }
+
+      // Upload attachments
+      if (files.length && planId) {
+        const uploaded = await uploadFiles(files);
+        const rows = uploaded.map((u, i) => ({
+          lesson_plan_id: planId, school_id: user.school_id,
+          file_url: u.url, file_name: u.name, file_type: u.type,
+          order_index: (attachmentsByPlan[planId]?.length || 0) + i,
+          uploaded_by: user.user_id,
+        }));
+        await (supabase as any).from('lesson_plan_attachments').insert(rows);
+      }
+
+      toast({ title: editingPlan ? 'Plan updated' : `Day ${nextDayNumber} plan added`, description: !autoApprove ? 'Pending admin approval' : undefined });
       resetForm();
       onRefresh();
     } catch (err: any) {
@@ -107,8 +137,7 @@ const DayPlanSection: React.FC<Props> = ({ chapterId, subjectId, classId, dayPla
   const handleToggleComplete = async (plan: DayPlan) => {
     const newStatus = plan.is_completed ? 'planned' : 'completed';
     await supabase.from('lesson_plans').update({
-      is_completed: !plan.is_completed,
-      status: newStatus,
+      is_completed: !plan.is_completed, status: newStatus,
       completed_at: !plan.is_completed ? new Date().toISOString() : null,
     }).eq('id', plan.id);
     onRefresh();
@@ -121,112 +150,107 @@ const DayPlanSection: React.FC<Props> = ({ chapterId, subjectId, classId, dayPla
     onRefresh();
   };
 
+  const removeAttachment = async (att: Attachment, planId: string) => {
+    await supabase.from('lesson_plan_attachments').delete().eq('id', att.id);
+    setAttachmentsByPlan(m => ({ ...m, [planId]: (m[planId] || []).filter(a => a.id !== att.id) }));
+  };
+
   const openCamera = () => {
     const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = 'image/*';
-    input.capture = 'environment';
-    input.onchange = (e: any) => {
-      const f = e.target.files?.[0];
-      if (f) setFile(f);
-    };
+    input.type = 'file'; input.accept = 'image/*'; input.capture = 'environment'; input.multiple = true;
+    input.onchange = (e: any) => { const fs = Array.from(e.target.files || []) as File[]; if (fs.length) setFiles(prev => [...prev, ...fs]); };
     input.click();
   };
 
   const isEditing = showAdd || editingPlan;
+  const canActuallyEdit = canEdit && (!editLocked || isAdminRole);
 
   return (
     <div className="pl-20 pb-3">
-      {/* Day Plans List */}
       {chapterPlans.length > 0 && (
         <div className="space-y-1 mb-2">
-          {chapterPlans.map(plan => (
-            <div key={plan.id} className={cn(
-              "flex items-center gap-2 p-2 rounded-lg transition-colors group",
-              plan.is_completed ? "bg-emerald-50/50" : "hover:bg-muted/20"
-            )}>
-              {canEdit && (
-                <button onClick={() => handleToggleComplete(plan)} className="flex-shrink-0">
-                  {plan.is_completed
-                    ? <CheckCircle className="w-4 h-4 text-emerald-500" />
-                    : <Circle className="w-4 h-4 text-muted-foreground hover:text-primary" />}
-                </button>
-              )}
-              {!canEdit && (
-                plan.is_completed
-                  ? <CheckCircle className="w-4 h-4 text-emerald-500 flex-shrink-0" />
-                  : <Circle className="w-4 h-4 text-muted-foreground flex-shrink-0" />
-              )}
-              <span className="text-[10px] font-bold text-primary bg-primary/10 px-1.5 py-0.5 rounded flex-shrink-0">
-                Day {plan.day_number}
-              </span>
-              <span className={cn("text-xs font-medium flex-1 truncate", plan.is_completed && "line-through text-muted-foreground")}>
-                {plan.title}
-              </span>
-              {plan.description && (
-                <span className="text-[10px] text-muted-foreground truncate max-w-[100px] hidden sm:inline">{plan.description}</span>
-              )}
-              {plan.file_url && (
-                <a href={plan.file_url} target="_blank" rel="noreferrer" className="flex-shrink-0">
-                  {plan.file_type?.startsWith('image/')
-                    ? <Image className="w-3.5 h-3.5 text-blue-500" />
-                    : <FileText className="w-3.5 h-3.5 text-blue-500" />}
-                </a>
-              )}
-              {canEdit && (
-                <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 flex-shrink-0">
-                  <button onClick={() => {
-                    setEditingPlan(plan);
-                    setTitle(plan.title);
-                    setDescription(plan.description || '');
-                    setFile(null);
-                  }} className="p-1 rounded hover:bg-muted"><Pencil className="w-3 h-3 text-muted-foreground" /></button>
-                  {canDelete && (
-                    <button onClick={() => handleDelete(plan)} className="p-1 rounded hover:bg-destructive/10">
-                      <Trash2 className="w-3 h-3 text-destructive" />
-                    </button>
-                  )}
-                </div>
-              )}
-            </div>
-          ))}
+          {chapterPlans.map(plan => {
+            const atts = attachmentsByPlan[plan.id] || [];
+            const pending = plan.approval_status === 'pending';
+            const rejected = plan.approval_status === 'rejected';
+            return (
+              <div key={plan.id} className={cn(
+                "flex items-center gap-2 p-2 rounded-lg transition-colors group",
+                plan.is_completed ? "bg-emerald-50/50" : "hover:bg-muted/20",
+                pending && "bg-amber-50/40", rejected && "bg-red-50/40"
+              )}>
+                {canActuallyEdit ? (
+                  <button onClick={() => handleToggleComplete(plan)} className="flex-shrink-0">
+                    {plan.is_completed ? <CheckCircle className="w-4 h-4 text-emerald-500" /> : <Circle className="w-4 h-4 text-muted-foreground hover:text-primary" />}
+                  </button>
+                ) : (
+                  plan.is_completed ? <CheckCircle className="w-4 h-4 text-emerald-500 flex-shrink-0" /> : <Circle className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                )}
+                <span className="text-[10px] font-bold text-primary bg-primary/10 px-1.5 py-0.5 rounded flex-shrink-0">Day {plan.day_number}</span>
+                <span className={cn("text-xs font-medium flex-1 truncate", plan.is_completed && "line-through text-muted-foreground")}>{plan.title}</span>
+                {pending && <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 flex items-center gap-0.5"><Clock className="w-2.5 h-2.5" />Pending</span>}
+                {rejected && <span className="text-[9px] px-1.5 py-0.5 rounded bg-red-100 text-red-700">Rejected</span>}
+                {plan.notepad_content && <button onClick={() => setOpenNotepadFor(plan)} className="flex-shrink-0" title="View notepad"><NotebookPen className="w-3.5 h-3.5 text-violet-500" /></button>}
+                {atts.length > 0 && <span className="text-[10px] text-muted-foreground flex-shrink-0">{atts.length}📎</span>}
+                {canActuallyEdit && (
+                  <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 flex-shrink-0">
+                    <button onClick={() => setOpenNotepadFor(plan)} className="p-1 rounded hover:bg-muted" title="Open notepad"><NotebookPen className="w-3 h-3 text-violet-500" /></button>
+                    <button onClick={() => { setEditingPlan(plan); setTitle(plan.title); setDescription(plan.description || ''); setFiles([]); }} className="p-1 rounded hover:bg-muted"><Pencil className="w-3 h-3 text-muted-foreground" /></button>
+                    {canDelete && <button onClick={() => handleDelete(plan)} className="p-1 rounded hover:bg-destructive/10"><Trash2 className="w-3 h-3 text-destructive" /></button>}
+                  </div>
+                )}
+                {isAdminRole && pending && (
+                  <button onClick={async () => {
+                    await supabase.from('lesson_plans').update({ approval_status: 'approved', approved_by: user?.user_id, approved_at: new Date().toISOString() }).eq('id', plan.id);
+                    toast({ title: 'Approved' }); onRefresh();
+                  }} className="p-1 rounded bg-emerald-500/10 text-emerald-600 flex-shrink-0" title="Approve"><Check className="w-3 h-3" /></button>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
 
-      {/* Add/Edit Form */}
+      {editLocked && !isAdminRole && canEdit && (
+        <div className="mb-2 px-3 py-2 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-700 flex items-center gap-2">
+          <Lock className="w-3.5 h-3.5" /> Editing disabled. Contact your {user?.role === 'teacher' ? 'admin' : 'super admin'}.
+        </div>
+      )}
+
       {isEditing && (
         <div className="p-3 rounded-xl border border-border bg-muted/30 space-y-2.5">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-primary">
-              {editingPlan ? `Edit Day ${editingPlan.day_number}` : `Day ${nextDayNumber} Plan`}
-            </span>
+            <span className="text-xs font-bold text-primary">{editingPlan ? `Edit Day ${editingPlan.day_number}` : `Day ${nextDayNumber} Plan`}</span>
             <button onClick={resetForm} className="p-1 rounded hover:bg-muted"><X className="w-3.5 h-3.5" /></button>
           </div>
           <input value={title} onChange={e => setTitle(e.target.value)} placeholder="What to teach? (e.g. Introduction to Algebra)"
             className="w-full px-3 py-2 rounded-lg border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/20" />
           <input value={description} onChange={e => setDescription(e.target.value)} placeholder="Brief notes (optional)"
             className="w-full px-3 py-2 rounded-lg border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/20" />
-          <div className="flex items-center gap-2">
-            {file ? (
-              <div className="flex items-center gap-2 flex-1 p-2 rounded-lg bg-background border border-border">
-                <FileText className="w-4 h-4 text-primary flex-shrink-0" />
-                <span className="text-xs truncate flex-1">{file.name}</span>
-                <button onClick={() => setFile(null)}><X className="w-3.5 h-3.5 text-muted-foreground" /></button>
-              </div>
-            ) : (
-              <>
-                <label className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border bg-background text-xs font-medium cursor-pointer hover:bg-muted transition-colors">
-                  <Upload className="w-3.5 h-3.5" /> File
-                  <input type="file" className="hidden" accept=".pdf,.doc,.docx,.ppt,.pptx,.jpg,.jpeg,.png,.mp4,.webm"
-                    onChange={e => e.target.files?.[0] && setFile(e.target.files[0])} />
-                </label>
-                <button onClick={openCamera}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border bg-background text-xs font-medium hover:bg-muted transition-colors">
-                  <Camera className="w-3.5 h-3.5" /> Camera
-                </button>
-              </>
-            )}
+
+          {files.length > 0 && (
+            <div className="space-y-1">
+              {files.map((f, i) => (
+                <div key={i} className="flex items-center gap-2 p-2 rounded-lg bg-background border border-border">
+                  <FileText className="w-4 h-4 text-primary flex-shrink-0" />
+                  <span className="text-xs truncate flex-1">{f.name}</span>
+                  <button onClick={() => setFiles(fs => fs.filter((_, j) => j !== i))}><X className="w-3.5 h-3.5 text-muted-foreground" /></button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="flex items-center flex-wrap gap-2">
+            <label className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border bg-background text-xs font-medium cursor-pointer hover:bg-muted">
+              <Upload className="w-3.5 h-3.5" /> Files
+              <input type="file" multiple className="hidden" accept=".pdf,.doc,.docx,.ppt,.pptx,.jpg,.jpeg,.png,.mp4,.webm"
+                onChange={e => { const fs = Array.from(e.target.files || []); if (fs.length) setFiles(prev => [...prev, ...fs]); }} />
+            </label>
+            <button onClick={openCamera} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border bg-background text-xs font-medium hover:bg-muted">
+              <Camera className="w-3.5 h-3.5" /> Camera
+            </button>
             <div className="flex-1" />
+            {!autoApprove && <span className="text-[10px] text-amber-600 flex items-center gap-1"><AlertCircle className="w-3 h-3" /> Needs approval</span>}
             <button onClick={handleSave} disabled={saving}
               className="px-4 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-medium hover:opacity-90 disabled:opacity-50">
               {saving ? 'Saving...' : editingPlan ? 'Update' : 'Add'}
@@ -235,13 +259,83 @@ const DayPlanSection: React.FC<Props> = ({ chapterId, subjectId, classId, dayPla
         </div>
       )}
 
-      {/* Add Plan Button */}
-      {canEdit && !isEditing && (
-        <button onClick={() => { setShowAdd(true); setTitle(''); setDescription(''); setFile(null); }}
+      {canActuallyEdit && !isEditing && (
+        <button onClick={() => { setShowAdd(true); setTitle(''); setDescription(''); setFiles([]); }}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-primary hover:bg-primary/10 transition-colors">
           <Plus className="w-3.5 h-3.5" /> Add Day {nextDayNumber} Plan
         </button>
       )}
+
+      {openNotepadFor && (
+        <NotepadModal plan={openNotepadFor} canEdit={canActuallyEdit} attachments={attachmentsByPlan[openNotepadFor.id] || []}
+          onRemoveAttachment={(a) => removeAttachment(a, openNotepadFor.id)}
+          onClose={() => setOpenNotepadFor(null)} onSaved={onRefresh} />
+      )}
+    </div>
+  );
+};
+
+const NotepadModal: React.FC<{ plan: DayPlan; canEdit: boolean; attachments: Attachment[]; onRemoveAttachment: (a: Attachment) => void; onClose: () => void; onSaved: () => void }> = ({ plan, canEdit, attachments, onRemoveAttachment, onClose, onSaved }) => {
+  const { user } = useAuth();
+  const [content, setContent] = useState<any>(plan.notepad_content);
+  const [saving, setSaving] = useState(false);
+  const isStudent = user?.role === 'student';
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      await supabase.from('lesson_plans').update({ notepad_content: content }).eq('id', plan.id);
+      toast({ title: 'Notepad saved' });
+      onSaved();
+      onClose();
+    } finally { setSaving(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4">
+      <div className="bg-card rounded-2xl max-w-4xl w-full max-h-[95vh] flex flex-col">
+        <div className="flex items-center justify-between p-4 border-b border-border">
+          <div>
+            <p className="text-xs text-muted-foreground">Day {plan.day_number}</p>
+            <h2 className="font-bold text-lg">{plan.title}</h2>
+          </div>
+          <button onClick={onClose} className="p-1 rounded hover:bg-muted"><X className="w-5 h-5" /></button>
+        </div>
+        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          <LexicalNotepad initialContent={content} onChange={canEdit && !isStudent ? (json) => setContent(json) : undefined} readOnly={!canEdit || isStudent} preventCopy={isStudent} />
+          {attachments.length > 0 && (
+            <div>
+              <p className="text-sm font-semibold mb-2">Attachments ({attachments.length})</p>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {attachments.map(a => (
+                  <div key={a.id} className="relative group border border-border rounded-lg overflow-hidden">
+                    {a.file_type?.startsWith('image/') ? (
+                      <img src={a.file_url} alt={a.file_name} className="w-full h-32 object-cover" />
+                    ) : (
+                      <div className="p-3 flex items-center gap-2 text-xs">
+                        <FileText className="w-4 h-4" />
+                        <a href={a.file_url} target="_blank" rel="noreferrer" className="truncate hover:underline flex-1">{a.file_name}</a>
+                      </div>
+                    )}
+                    {canEdit && !isStudent && (
+                      <button onClick={() => onRemoveAttachment(a)}
+                        className="absolute top-1 right-1 p-1 rounded bg-black/60 text-white opacity-0 group-hover:opacity-100">
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+        {canEdit && !isStudent && (
+          <div className="flex justify-end gap-2 p-4 border-t border-border">
+            <button onClick={onClose} className="px-4 py-2 rounded-lg border border-border">Cancel</button>
+            <button onClick={save} disabled={saving} className="px-4 py-2 rounded-lg bg-primary text-primary-foreground disabled:opacity-50">{saving ? 'Saving...' : 'Save Notepad'}</button>
+          </div>
+        )}
+      </div>
     </div>
   );
 };

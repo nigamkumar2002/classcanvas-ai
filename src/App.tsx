@@ -27,6 +27,9 @@ import FeedbackPage from "@/pages/FeedbackPage";
 import AuditLogsPage from "@/pages/AuditLogsPage";
 import LessonPlannerPage from "@/pages/LessonPlannerPage";
 import ProfilePage from "@/pages/ProfilePage";
+import ComplaintsPage from "@/pages/ComplaintsPage";
+import PracticePage from "@/pages/PracticePage";
+import StudyMaterialPrintPage from "@/pages/StudyMaterialPrintPage";
 import NotFound from "./pages/NotFound";
 
 const AppRoutes = () => {
@@ -82,6 +85,9 @@ const AppRoutes = () => {
       <Route path="/feedback" element={wrap(FeedbackPage)} />
       <Route path="/audit-logs" element={wrap(AuditLogsPage, ['developer', 'super_admin'])} />
       <Route path="/lesson-planner" element={wrap(LessonPlannerPage)} />
+      <Route path="/complaints" element={wrap(ComplaintsPage)} />
+      <Route path="/practice" element={wrap(PracticePage, ['student'])} />
+      <Route path="/study-material-print" element={wrap(StudyMaterialPrintPage, ['developer', 'super_admin', 'admin'])} />
 
       <Route path="*" element={<NotFound />} />
     </Routes>

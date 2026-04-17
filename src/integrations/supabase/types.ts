@@ -312,6 +312,148 @@ export type Database = {
           },
         ]
       }
+      complaint_activity: {
+        Row: {
+          action: string
+          actor_id: string | null
+          complaint_id: string
+          created_at: string
+          details: Json | null
+          id: string
+          school_id: string
+        }
+        Insert: {
+          action: string
+          actor_id?: string | null
+          complaint_id: string
+          created_at?: string
+          details?: Json | null
+          id?: string
+          school_id: string
+        }
+        Update: {
+          action?: string
+          actor_id?: string | null
+          complaint_id?: string
+          created_at?: string
+          details?: Json | null
+          id?: string
+          school_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "complaint_activity_complaint_id_fkey"
+            columns: ["complaint_id"]
+            isOneToOne: false
+            referencedRelation: "complaints"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      complaint_responses: {
+        Row: {
+          action_taken: string | null
+          complaint_id: string
+          created_at: string
+          id: string
+          message: string
+          responder_id: string
+          school_id: string
+        }
+        Insert: {
+          action_taken?: string | null
+          complaint_id: string
+          created_at?: string
+          id?: string
+          message: string
+          responder_id: string
+          school_id: string
+        }
+        Update: {
+          action_taken?: string | null
+          complaint_id?: string
+          created_at?: string
+          id?: string
+          message?: string
+          responder_id?: string
+          school_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "complaint_responses_complaint_id_fkey"
+            columns: ["complaint_id"]
+            isOneToOne: false
+            referencedRelation: "complaints"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      complaints: {
+        Row: {
+          against_role: string | null
+          category: string
+          created_at: string
+          current_assignee: string | null
+          current_level: string
+          description: string
+          escalation_count: number
+          id: string
+          last_reminder_at: string | null
+          priority: string
+          raised_against: string | null
+          raised_by: string
+          resolution_notes: string | null
+          resolved_at: string | null
+          resolved_by: string | null
+          school_id: string
+          status: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          against_role?: string | null
+          category?: string
+          created_at?: string
+          current_assignee?: string | null
+          current_level?: string
+          description: string
+          escalation_count?: number
+          id?: string
+          last_reminder_at?: string | null
+          priority?: string
+          raised_against?: string | null
+          raised_by: string
+          resolution_notes?: string | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          school_id: string
+          status?: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          against_role?: string | null
+          category?: string
+          created_at?: string
+          current_assignee?: string | null
+          current_level?: string
+          description?: string
+          escalation_count?: number
+          id?: string
+          last_reminder_at?: string | null
+          priority?: string
+          raised_against?: string | null
+          raised_by?: string
+          resolution_notes?: string | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          school_id?: string
+          status?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       content_approvals: {
         Row: {
           comments: string | null
@@ -730,8 +872,55 @@ export type Database = {
           },
         ]
       }
+      lesson_plan_attachments: {
+        Row: {
+          created_at: string
+          file_name: string
+          file_type: string | null
+          file_url: string
+          id: string
+          lesson_plan_id: string
+          order_index: number
+          school_id: string
+          uploaded_by: string | null
+        }
+        Insert: {
+          created_at?: string
+          file_name: string
+          file_type?: string | null
+          file_url: string
+          id?: string
+          lesson_plan_id: string
+          order_index?: number
+          school_id: string
+          uploaded_by?: string | null
+        }
+        Update: {
+          created_at?: string
+          file_name?: string
+          file_type?: string | null
+          file_url?: string
+          id?: string
+          lesson_plan_id?: string
+          order_index?: number
+          school_id?: string
+          uploaded_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lesson_plan_attachments_lesson_plan_id_fkey"
+            columns: ["lesson_plan_id"]
+            isOneToOne: false
+            referencedRelation: "lesson_plans"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       lesson_plans: {
         Row: {
+          approval_status: string
+          approved_at: string | null
+          approved_by: string | null
           chapter_id: string | null
           class_id: string
           completed_at: string | null
@@ -744,10 +933,12 @@ export type Database = {
           file_url: string | null
           id: string
           is_completed: boolean
+          notepad_content: Json | null
           notes: string | null
           objectives: string | null
           period_number: number
           planned_date: string
+          rejection_reason: string | null
           resources: string | null
           school_id: string
           status: string
@@ -757,6 +948,9 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          approval_status?: string
+          approved_at?: string | null
+          approved_by?: string | null
           chapter_id?: string | null
           class_id: string
           completed_at?: string | null
@@ -769,10 +963,12 @@ export type Database = {
           file_url?: string | null
           id?: string
           is_completed?: boolean
+          notepad_content?: Json | null
           notes?: string | null
           objectives?: string | null
           period_number?: number
           planned_date?: string
+          rejection_reason?: string | null
           resources?: string | null
           school_id: string
           status?: string
@@ -782,6 +978,9 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          approval_status?: string
+          approved_at?: string | null
+          approved_by?: string | null
           chapter_id?: string | null
           class_id?: string
           completed_at?: string | null
@@ -794,10 +993,12 @@ export type Database = {
           file_url?: string | null
           id?: string
           is_completed?: boolean
+          notepad_content?: Json | null
           notes?: string | null
           objectives?: string | null
           period_number?: number
           planned_date?: string
+          rejection_reason?: string | null
           resources?: string | null
           school_id?: string
           status?: string
@@ -1093,6 +1294,134 @@ export type Database = {
           updated_at?: string
           updated_by?: string | null
           value?: Json
+        }
+        Relationships: []
+      }
+      practice_questions: {
+        Row: {
+          correct_answer: string
+          id: string
+          marks: number
+          option_a: string
+          option_b: string
+          option_c: string
+          option_d: string
+          order_index: number
+          practice_test_id: string
+          question_text: string
+          school_id: string
+          student_answer: string | null
+        }
+        Insert: {
+          correct_answer: string
+          id?: string
+          marks?: number
+          option_a: string
+          option_b: string
+          option_c: string
+          option_d: string
+          order_index?: number
+          practice_test_id: string
+          question_text: string
+          school_id: string
+          student_answer?: string | null
+        }
+        Update: {
+          correct_answer?: string
+          id?: string
+          marks?: number
+          option_a?: string
+          option_b?: string
+          option_c?: string
+          option_d?: string
+          order_index?: number
+          practice_test_id?: string
+          question_text?: string
+          school_id?: string
+          student_answer?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "practice_questions_practice_test_id_fkey"
+            columns: ["practice_test_id"]
+            isOneToOne: false
+            referencedRelation: "practice_tests"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      practice_quotas: {
+        Row: {
+          id: string
+          questions_used: number
+          quota_start_date: string
+          school_id: string
+          student_id: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          questions_used?: number
+          quota_start_date?: string
+          school_id: string
+          student_id: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          questions_used?: number
+          quota_start_date?: string
+          school_id?: string
+          student_id?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      practice_tests: {
+        Row: {
+          chapter_id: string | null
+          completed_at: string | null
+          duration_minutes: number
+          generated_at: string
+          id: string
+          num_questions: number
+          school_id: string
+          score: number | null
+          started_at: string | null
+          student_id: string
+          subject_id: string | null
+          topic: string | null
+          total_marks: number | null
+        }
+        Insert: {
+          chapter_id?: string | null
+          completed_at?: string | null
+          duration_minutes?: number
+          generated_at?: string
+          id?: string
+          num_questions: number
+          school_id: string
+          score?: number | null
+          started_at?: string | null
+          student_id: string
+          subject_id?: string | null
+          topic?: string | null
+          total_marks?: number | null
+        }
+        Update: {
+          chapter_id?: string | null
+          completed_at?: string | null
+          duration_minutes?: number
+          generated_at?: string
+          id?: string
+          num_questions?: number
+          school_id?: string
+          score?: number | null
+          started_at?: string | null
+          student_id?: string
+          subject_id?: string | null
+          topic?: string | null
+          total_marks?: number | null
         }
         Relationships: []
       }
@@ -1472,6 +1801,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      escalate_stale_complaints: { Args: never; Returns: number }
       get_exam_questions_for_student: {
         Args: { _exam_id: string }
         Returns: {
@@ -1484,6 +1814,14 @@ export type Database = {
           option_d: string
           order_index: number
           question_text: string
+        }[]
+      }
+      get_teacher_rating: {
+        Args: { _teacher_id: string }
+        Returns: {
+          complaints_against: number
+          complaints_resolved: number
+          rating: number
         }[]
       }
       get_user_role: {
