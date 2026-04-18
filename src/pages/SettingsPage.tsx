@@ -181,6 +181,78 @@ const SettingsPage = () => {
         </div>
       )}
 
+      {/* School Settings (Admin / Super Admin) */}
+      {isSchoolAdminOrAbove && (
+        <div className="bg-card rounded-2xl border border-border shadow-card p-6">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="w-8 h-8 rounded-xl bg-gradient-blue flex items-center justify-center">
+              <NotebookPen className="w-4 h-4 text-white" />
+            </div>
+            <h2 className="font-bold">School Settings</h2>
+          </div>
+
+          <div className="space-y-4">
+            <ToggleRow
+              icon={<CheckCircle className="w-5 h-5 text-emerald-600" />}
+              title="Auto-approve lesson plans"
+              desc="When ON, teacher day-plans go live immediately. When OFF, plans require admin approval."
+              value={autoApprovePlans}
+              disabled={savingSchool}
+              onChange={(v) => { setAutoApprovePlans(v); upsertSchoolSetting('auto_approve_lesson_plans', v); }}
+            />
+            <ToggleRow
+              icon={<NotebookPen className="w-5 h-5 text-violet-600" />}
+              title="Allow teachers to edit lesson plans"
+              desc="When OFF, teachers can view but not modify their existing plans."
+              value={planEditableTeacher}
+              disabled={savingSchool}
+              onChange={(v) => { setPlanEditableTeacher(v); upsertSchoolSetting('lesson_plan_editable', v); }}
+            />
+            {user?.role === 'super_admin' && (
+              <ToggleRow
+                icon={<NotebookPen className="w-5 h-5 text-blue-600" />}
+                title="Allow school admins to edit lesson plans"
+                desc="When OFF, school admins can view but not modify lesson plans."
+                value={planEditableAdmin}
+                disabled={savingSchool}
+                onChange={(v) => { setPlanEditableAdmin(v); upsertSchoolSetting('lesson_plan_admin_editable', v); }}
+              />
+            )}
+            <ToggleRow
+              icon={<CheckCircle className="w-5 h-5 text-amber-600" />}
+              title="Auto-approve content & exams"
+              desc="When OFF, teacher-uploaded content and exams require admin approval before publishing."
+              value={autoApproveContent}
+              disabled={savingSchool}
+              onChange={(v) => { setAutoApproveContent(v); upsertSchoolSetting('auto_approve_content', v); }}
+            />
+
+            <div className="flex items-start justify-between gap-3 p-4 rounded-xl bg-muted/30 border border-border/50">
+              <div className="flex items-start gap-3 flex-1">
+                <Brain className="w-5 h-5 text-primary mt-0.5" />
+                <div className="flex-1">
+                  <p className="font-medium text-sm">Practice test weekly quota</p>
+                  <p className="text-xs text-muted-foreground">Max AI-generated questions a student can request per 7-day window.</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number" min={0} max={500}
+                  value={practiceQuota}
+                  onChange={(e) => setPracticeQuota(parseInt(e.target.value) || 0)}
+                  className="w-20 px-3 py-1.5 rounded-lg border border-border bg-background text-sm text-center"
+                />
+                <button
+                  onClick={() => upsertSchoolSetting('practice_weekly_quota', practiceQuota)}
+                  disabled={savingSchool}
+                  className="px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-semibold hover:opacity-90 disabled:opacity-50"
+                >Save</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Notifications */}
       <div className="bg-card rounded-2xl border border-border shadow-card p-6">
         <div className="flex items-center gap-3 mb-6">
