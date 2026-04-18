@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
-import { Settings, User, Bell, Shield, Globe, Save, Lock, Eye, EyeOff } from 'lucide-react';
+import { Settings, User, Bell, Shield, Globe, Save, Lock, Eye, EyeOff, NotebookPen, CheckCircle, Brain } from 'lucide-react';
 import { toast } from 'sonner';
 
 const SettingsPage = () => {
