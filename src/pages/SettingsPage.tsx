@@ -12,8 +12,17 @@ const SettingsPage = () => {
   const [showDemoCredentials, setShowDemoCredentials] = useState(true);
   const [loadingSettings, setLoadingSettings] = useState(false);
 
+  // School-level settings
+  const [autoApprovePlans, setAutoApprovePlans] = useState(true);
+  const [planEditableTeacher, setPlanEditableTeacher] = useState(true);
+  const [planEditableAdmin, setPlanEditableAdmin] = useState(true);
+  const [autoApproveContent, setAutoApproveContent] = useState(false);
+  const [practiceQuota, setPracticeQuota] = useState(50);
+  const [savingSchool, setSavingSchool] = useState(false);
+
   const isDemo = user?.is_demo ?? false;
   const isDeveloper = user?.role === 'developer';
+  const isSchoolAdminOrAbove = user?.role === 'admin' || user?.role === 'super_admin';
 
   // Load platform settings for developer
   useEffect(() => {
