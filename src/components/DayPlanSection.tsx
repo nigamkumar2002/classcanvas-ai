@@ -86,17 +86,17 @@ const DayPlanSection: React.FC<Props> = ({ chapterId, subjectId, classId, dayPla
     return uploaded;
   };
 
-  const handleSave = async () => {
-    if (!title.trim()) { toast({ title: 'Title required', variant: 'destructive' }); return; }
+  const handleSave = async (opts?: { openNotepadAfter?: boolean }) => {
     if (!user?.school_id) return;
     setSaving(true);
     try {
       let planId = editingPlan?.id;
       const approvalStatus = autoApprove ? 'approved' : 'pending';
+      const finalTitle = (title.trim() || `Day ${editingPlan?.day_number || nextDayNumber} Plan`);
 
       if (editingPlan) {
         const { error } = await supabase.from('lesson_plans').update({
-          title: title.trim(), description: description.trim() || null,
+          title: finalTitle, description: description.trim() || null,
           approval_status: autoApprove ? editingPlan.approval_status || 'approved' : 'pending',
         }).eq('id', editingPlan.id);
         if (error) throw error;
@@ -104,7 +104,7 @@ const DayPlanSection: React.FC<Props> = ({ chapterId, subjectId, classId, dayPla
         const { data, error } = await (supabase as any).from('lesson_plans').insert({
           chapter_id: chapterId, subject_id: subjectId, class_id: classId,
           teacher_id: user.user_id, school_id: user.school_id,
-          day_number: nextDayNumber, title: title.trim(),
+          day_number: nextDayNumber, title: finalTitle,
           description: description.trim() || null,
           planned_date: new Date().toISOString().split('T')[0],
           period_number: 1, status: 'planned',
@@ -127,6 +127,12 @@ const DayPlanSection: React.FC<Props> = ({ chapterId, subjectId, classId, dayPla
       }
 
       toast({ title: editingPlan ? 'Plan updated' : `Day ${nextDayNumber} plan added`, description: !autoApprove ? 'Pending admin approval' : undefined });
+
+      // If user clicked "Open Notepad", fetch the saved plan and open notepad
+      if (opts?.openNotepadAfter && planId) {
+        const { data: full } = await supabase.from('lesson_plans').select('*').eq('id', planId).maybeSingle();
+        if (full) setOpenNotepadFor(full as any);
+      }
       resetForm();
       onRefresh();
     } catch (err: any) {
@@ -218,21 +224,23 @@ const DayPlanSection: React.FC<Props> = ({ chapterId, subjectId, classId, dayPla
       )}
 
       {isEditing && (
-        <div className="p-3 rounded-xl border border-border bg-muted/30 space-y-2.5">
+        <div className="p-4 rounded-xl border border-border bg-muted/30 space-y-3">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-primary">{editingPlan ? `Edit Day ${editingPlan.day_number}` : `Day ${nextDayNumber} Plan`}</span>
-            <button onClick={resetForm} className="p-1 rounded hover:bg-muted"><X className="w-3.5 h-3.5" /></button>
+            <span className="text-sm font-bold text-primary">
+              {editingPlan ? `Edit Day ${editingPlan.day_number}` : `Day ${nextDayNumber} Plan`}
+            </span>
+            <button onClick={resetForm} className="p-1 rounded hover:bg-muted"><X className="w-4 h-4" /></button>
           </div>
-          <input value={title} onChange={e => setTitle(e.target.value)} placeholder="What to teach? (e.g. Introduction to Algebra)"
-            className="w-full px-3 py-2 rounded-lg border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/20" />
-          <input value={description} onChange={e => setDescription(e.target.value)} placeholder="Brief notes (optional)"
-            className="w-full px-3 py-2 rounded-lg border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/20" />
+
+          <p className="text-xs text-muted-foreground">
+            Pick how to add your day plan — open a rich notepad, snap a photo, or upload files.
+          </p>
 
           {files.length > 0 && (
             <div className="space-y-1">
               {files.map((f, i) => (
                 <div key={i} className="flex items-center gap-2 p-2 rounded-lg bg-background border border-border">
-                  <FileText className="w-4 h-4 text-primary flex-shrink-0" />
+                  {f.type.startsWith('image/') ? <ImageIcon className="w-4 h-4 text-primary flex-shrink-0" /> : <FileText className="w-4 h-4 text-primary flex-shrink-0" />}
                   <span className="text-xs truncate flex-1">{f.name}</span>
                   <button onClick={() => setFiles(fs => fs.filter((_, j) => j !== i))}><X className="w-3.5 h-3.5 text-muted-foreground" /></button>
                 </div>
@@ -240,21 +248,42 @@ const DayPlanSection: React.FC<Props> = ({ chapterId, subjectId, classId, dayPla
             </div>
           )}
 
-          <div className="flex items-center flex-wrap gap-2">
-            <label className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border bg-background text-xs font-medium cursor-pointer hover:bg-muted">
-              <Upload className="w-3.5 h-3.5" /> Files
+          <div className="grid grid-cols-3 gap-2">
+            <button
+              onClick={() => handleSave({ openNotepadAfter: true })}
+              disabled={saving}
+              className="flex flex-col items-center justify-center gap-1.5 p-3 rounded-xl border-2 border-violet-200 bg-violet-50 hover:bg-violet-100 text-violet-700 transition-colors disabled:opacity-50"
+              title="Open rich notepad"
+            >
+              <NotebookPen className="w-5 h-5" />
+              <span className="text-[11px] font-semibold">Open Notepad</span>
+            </button>
+            <button
+              onClick={openCamera}
+              disabled={saving}
+              className="flex flex-col items-center justify-center gap-1.5 p-3 rounded-xl border-2 border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-700 transition-colors disabled:opacity-50"
+              title="Take a photo"
+            >
+              <Camera className="w-5 h-5" />
+              <span className="text-[11px] font-semibold">Camera</span>
+            </button>
+            <label className="flex flex-col items-center justify-center gap-1.5 p-3 rounded-xl border-2 border-emerald-200 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 transition-colors cursor-pointer">
+              <Upload className="w-5 h-5" />
+              <span className="text-[11px] font-semibold">Upload Files</span>
               <input type="file" multiple className="hidden" accept=".pdf,.doc,.docx,.ppt,.pptx,.jpg,.jpeg,.png,.mp4,.webm"
                 onChange={e => { const fs = Array.from(e.target.files || []); if (fs.length) setFiles(prev => [...prev, ...fs]); }} />
             </label>
-            <button onClick={openCamera} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border bg-background text-xs font-medium hover:bg-muted">
-              <Camera className="w-3.5 h-3.5" /> Camera
-            </button>
-            <div className="flex-1" />
+          </div>
+
+          <div className="flex items-center justify-between gap-2 pt-2 border-t border-border">
             {!autoApprove && <span className="text-[10px] text-amber-600 flex items-center gap-1"><AlertCircle className="w-3 h-3" /> Needs approval</span>}
-            <button onClick={handleSave} disabled={saving}
-              className="px-4 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-medium hover:opacity-90 disabled:opacity-50">
-              {saving ? 'Saving...' : editingPlan ? 'Update' : 'Add'}
-            </button>
+            <div className="flex-1" />
+            {(files.length > 0 || editingPlan) && (
+              <button onClick={() => handleSave()} disabled={saving}
+                className="px-4 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-medium hover:opacity-90 disabled:opacity-50">
+                {saving ? 'Saving...' : editingPlan ? 'Update Plan' : `Save Day ${nextDayNumber}`}
+              </button>
+            )}
           </div>
         </div>
       )}
