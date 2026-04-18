@@ -130,6 +130,12 @@ const BulkImportPage = () => {
             Download the multi-sheet Excel template. Each tab represents one entity (schools, users, classes, subjects, chapters, materials).
             Use the <strong>school_code</strong> column to link entities across sheets. You can fill only the sheets you need.
           </p>
+          <div className="rounded-md border bg-muted/40 p-3 text-xs space-y-1.5">
+            <div className="font-semibold text-foreground">🔐 Auto-generated credentials (leave email & password blank in the users sheet):</div>
+            <div><strong>Super Admin / Admin / Teacher</strong> → email: <code>firstname.lastname@&lt;schoolhandle&gt;.com</code> · password: <code>&lt;Schoolhandle&gt;@{new Date().getFullYear()}</code> (e.g. <code>Bfa@{new Date().getFullYear()}</code>)</div>
+            <div><strong>Student</strong> → email: <code>&lt;admission_no&gt;@&lt;schoolhandle&gt;.com</code> · password: <code>DDMMYYYY</code> (date of birth, e.g. <code>12012010</code>)</div>
+            <div className="text-muted-foreground italic">You can override either by filling the email/password column for any row.</div>
+          </div>
           <Button onClick={downloadTemplate} variant="outline">
             <Download className="w-4 h-4 mr-2" /> Download Excel Template
           </Button>
