@@ -114,7 +114,10 @@ const LexicalNotepad: React.FC<Props> = ({ initialContent, onChange, readOnly, p
           <RichTextPlugin
             contentEditable={
               <ContentEditable
-                className={cn("min-h-[300px] max-h-[60vh] overflow-y-auto p-4 outline-none prose prose-sm max-w-none focus:outline-none", readOnly && "cursor-default")}
+                className={cn(
+                  "outline-none prose prose-sm max-w-none focus:outline-none p-4",
+                  readOnly ? "min-h-0 cursor-default" : "min-h-[300px] max-h-[60vh] overflow-y-auto"
+                )}
               />
             }
             placeholder={<div className="absolute top-4 left-4 text-muted-foreground pointer-events-none">{placeholder}</div>}

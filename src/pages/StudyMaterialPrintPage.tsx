@@ -141,8 +141,15 @@ const StudyMaterialPrintPage: React.FC = () => {
               @page { size: A4; margin: 15mm; }
               .page-break { page-break-after: always; }
               .no-print { display: none; }
+              /* Force notepad and any scrollable boxes to expand fully when printing */
+              .print-content [contenteditable] { max-height: none !important; height: auto !important; overflow: visible !important; }
+              .print-content .prose { max-height: none !important; overflow: visible !important; }
+              .print-content { break-inside: auto; }
+              .print-content img { max-width: 100%; page-break-inside: avoid; }
+              .print-content p, .print-content li { orphans: 3; widows: 3; }
             }
             .print-content h1, .print-content h2, .print-content h3 { color: #111; }
+            .print-content [contenteditable] { max-height: none !important; height: auto !important; overflow: visible !important; }
           `}</style>
           {/* Cover */}
           <div className="p-8 text-center page-break print-content">
@@ -187,8 +194,8 @@ const StudyMaterialPrintPage: React.FC = () => {
                 </div>
                 {p.description && <p className="italic text-gray-700 mb-4">{p.description}</p>}
                 {p.notepad_content ? (
-                  <div className="prose max-w-none">
-                    <LexicalNotepad initialContent={p.notepad_content} readOnly className="border-0" />
+                  <div className="prose max-w-none print-notepad">
+                    <LexicalNotepad initialContent={p.notepad_content} readOnly className="border-0 print-expand" />
                   </div>
                 ) : (
                   <p className="text-gray-500">No detailed notepad content for this day.</p>

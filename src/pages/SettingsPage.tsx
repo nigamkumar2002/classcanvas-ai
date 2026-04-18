@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
-import { Settings, User, Bell, Shield, Globe, Save, Lock, Eye, EyeOff } from 'lucide-react';
+import { Settings, User, Bell, Shield, Globe, Save, Lock, Eye, EyeOff, NotebookPen, CheckCircle, Brain } from 'lucide-react';
 import { toast } from 'sonner';
 
 const SettingsPage = () => {
@@ -12,8 +12,17 @@ const SettingsPage = () => {
   const [showDemoCredentials, setShowDemoCredentials] = useState(true);
   const [loadingSettings, setLoadingSettings] = useState(false);
 
+  // School-level settings
+  const [autoApprovePlans, setAutoApprovePlans] = useState(true);
+  const [planEditableTeacher, setPlanEditableTeacher] = useState(true);
+  const [planEditableAdmin, setPlanEditableAdmin] = useState(true);
+  const [autoApproveContent, setAutoApproveContent] = useState(false);
+  const [practiceQuota, setPracticeQuota] = useState(50);
+  const [savingSchool, setSavingSchool] = useState(false);
+
   const isDemo = user?.is_demo ?? false;
   const isDeveloper = user?.role === 'developer';
+  const isSchoolAdminOrAbove = user?.role === 'admin' || user?.role === 'super_admin';
 
   // Load platform settings for developer
   useEffect(() => {
@@ -30,6 +39,34 @@ const SettingsPage = () => {
     };
     load();
   }, [isDeveloper]);
+
+  // Load school settings for admin/super_admin
+  useEffect(() => {
+    if (!isSchoolAdminOrAbove || !user?.school_id) return;
+    (async () => {
+      const { data } = await supabase.from('school_settings').select('key, value').eq('school_id', user.school_id);
+      const map = new Map((data || []).map((s: any) => [s.key, s.value]));
+      const get = (k: string, def: any) => (map.has(k) ? map.get(k) : def);
+      setAutoApprovePlans(get('auto_approve_lesson_plans', true) !== false);
+      setPlanEditableTeacher(get('lesson_plan_editable', true) !== false);
+      setPlanEditableAdmin(get('lesson_plan_admin_editable', true) !== false);
+      setAutoApproveContent(get('auto_approve_content', false) === true);
+      const q = get('practice_weekly_quota', 50);
+      setPracticeQuota(typeof q === 'number' ? q : parseInt(q) || 50);
+    })();
+  }, [isSchoolAdminOrAbove, user?.school_id]);
+
+  const upsertSchoolSetting = async (key: string, value: any) => {
+    if (!user?.school_id) return;
+    setSavingSchool(true);
+    const { error } = await (supabase as any).from('school_settings').upsert(
+      { school_id: user.school_id, key, value, updated_by: user.user_id, updated_at: new Date().toISOString() },
+      { onConflict: 'school_id,key' }
+    );
+    setSavingSchool(false);
+    if (error) toast.error('Failed to save: ' + error.message);
+    else toast.success('Setting saved');
+  };
 
   const toggleDemoCredentials = async () => {
     setLoadingSettings(true);
@@ -144,6 +181,78 @@ const SettingsPage = () => {
         </div>
       )}
 
+      {/* School Settings (Admin / Super Admin) */}
+      {isSchoolAdminOrAbove && (
+        <div className="bg-card rounded-2xl border border-border shadow-card p-6">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="w-8 h-8 rounded-xl bg-gradient-blue flex items-center justify-center">
+              <NotebookPen className="w-4 h-4 text-white" />
+            </div>
+            <h2 className="font-bold">School Settings</h2>
+          </div>
+
+          <div className="space-y-4">
+            <ToggleRow
+              icon={<CheckCircle className="w-5 h-5 text-emerald-600" />}
+              title="Auto-approve lesson plans"
+              desc="When ON, teacher day-plans go live immediately. When OFF, plans require admin approval."
+              value={autoApprovePlans}
+              disabled={savingSchool}
+              onChange={(v) => { setAutoApprovePlans(v); upsertSchoolSetting('auto_approve_lesson_plans', v); }}
+            />
+            <ToggleRow
+              icon={<NotebookPen className="w-5 h-5 text-violet-600" />}
+              title="Allow teachers to edit lesson plans"
+              desc="When OFF, teachers can view but not modify their existing plans."
+              value={planEditableTeacher}
+              disabled={savingSchool}
+              onChange={(v) => { setPlanEditableTeacher(v); upsertSchoolSetting('lesson_plan_editable', v); }}
+            />
+            {user?.role === 'super_admin' && (
+              <ToggleRow
+                icon={<NotebookPen className="w-5 h-5 text-blue-600" />}
+                title="Allow school admins to edit lesson plans"
+                desc="When OFF, school admins can view but not modify lesson plans."
+                value={planEditableAdmin}
+                disabled={savingSchool}
+                onChange={(v) => { setPlanEditableAdmin(v); upsertSchoolSetting('lesson_plan_admin_editable', v); }}
+              />
+            )}
+            <ToggleRow
+              icon={<CheckCircle className="w-5 h-5 text-amber-600" />}
+              title="Auto-approve content & exams"
+              desc="When OFF, teacher-uploaded content and exams require admin approval before publishing."
+              value={autoApproveContent}
+              disabled={savingSchool}
+              onChange={(v) => { setAutoApproveContent(v); upsertSchoolSetting('auto_approve_content', v); }}
+            />
+
+            <div className="flex items-start justify-between gap-3 p-4 rounded-xl bg-muted/30 border border-border/50">
+              <div className="flex items-start gap-3 flex-1">
+                <Brain className="w-5 h-5 text-primary mt-0.5" />
+                <div className="flex-1">
+                  <p className="font-medium text-sm">Practice test weekly quota</p>
+                  <p className="text-xs text-muted-foreground">Max AI-generated questions a student can request per 7-day window.</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number" min={0} max={500}
+                  value={practiceQuota}
+                  onChange={(e) => setPracticeQuota(parseInt(e.target.value) || 0)}
+                  className="w-20 px-3 py-1.5 rounded-lg border border-border bg-background text-sm text-center"
+                />
+                <button
+                  onClick={() => upsertSchoolSetting('practice_weekly_quota', practiceQuota)}
+                  disabled={savingSchool}
+                  className="px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-semibold hover:opacity-90 disabled:opacity-50"
+                >Save</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Notifications */}
       <div className="bg-card rounded-2xl border border-border shadow-card p-6">
         <div className="flex items-center gap-3 mb-6">
@@ -228,5 +337,33 @@ const SettingsPage = () => {
     </div>
   );
 };
+
+interface ToggleRowProps {
+  icon: React.ReactNode;
+  title: string;
+  desc: string;
+  value: boolean;
+  disabled?: boolean;
+  onChange: (v: boolean) => void;
+}
+
+const ToggleRow: React.FC<ToggleRowProps> = ({ icon, title, desc, value, disabled, onChange }) => (
+  <div className="flex items-center justify-between gap-3 p-4 rounded-xl bg-muted/30 border border-border/50">
+    <div className="flex items-start gap-3 flex-1">
+      <div className="mt-0.5 flex-shrink-0">{icon}</div>
+      <div>
+        <p className="font-medium text-sm">{title}</p>
+        <p className="text-xs text-muted-foreground">{desc}</p>
+      </div>
+    </div>
+    <button
+      onClick={() => onChange(!value)}
+      disabled={disabled}
+      className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 disabled:opacity-50 ${value ? 'bg-primary' : 'bg-muted-foreground/30'}`}
+    >
+      <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${value ? 'translate-x-5' : 'translate-x-0'}`} />
+    </button>
+  </div>
+);
 
 export default SettingsPage;
