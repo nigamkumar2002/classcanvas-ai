@@ -40,12 +40,12 @@ const TEMPLATES: Record<SheetName, { headers: string[]; sample: Record<string, a
 };
 
 const BulkImportPage = () => {
-  const { profile } = useAuth();
+  const { user } = useAuth();
   const [parsedData, setParsedData] = useState<Partial<Record<SheetName, any[]>>>({});
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<any>(null);
 
-  if (profile && profile.role !== 'developer') {
+  if (user && user.role !== 'developer') {
     return <Navigate to="/dashboard" replace />;
   }
 
