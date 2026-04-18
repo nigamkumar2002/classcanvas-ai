@@ -4,7 +4,7 @@ import {
   GraduationCap, LayoutDashboard, BookOpen, Users, Settings,
   LogOut, ChevronLeft, ChevronRight, PlayCircle, FileText,
   BarChart3, School, Upload, ClipboardList, Search, Menu, Calendar, Megaphone,
-  CheckSquare, UserCheck, Award, MessageSquare, DollarSign, Star, Shield, BookMarked, User, NotebookPen, AlertTriangle, Brain, Printer
+  CheckSquare, UserCheck, Award, MessageSquare, DollarSign, Star, Shield, BookMarked, User, NotebookPen, AlertTriangle, Brain, Printer, FileSpreadsheet
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
@@ -15,6 +15,7 @@ const ROLE_MENUS: Record<string, { label: string; icon: React.ElementType; path:
     { label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
     { label: 'Schools', icon: School, path: '/schools' },
     { label: 'All Users', icon: Users, path: '/users' },
+    { label: 'Bulk Import', icon: FileSpreadsheet, path: '/bulk-import' },
     { label: 'Approvals', icon: CheckSquare, path: '/approvals' },
     { label: 'Complaints', icon: AlertTriangle, path: '/complaints' },
     { label: 'Messages', icon: MessageSquare, path: '/messages' },
