@@ -40,6 +40,34 @@ const SettingsPage = () => {
     load();
   }, [isDeveloper]);
 
+  // Load school settings for admin/super_admin
+  useEffect(() => {
+    if (!isSchoolAdminOrAbove || !user?.school_id) return;
+    (async () => {
+      const { data } = await supabase.from('school_settings').select('key, value').eq('school_id', user.school_id);
+      const map = new Map((data || []).map((s: any) => [s.key, s.value]));
+      const get = (k: string, def: any) => (map.has(k) ? map.get(k) : def);
+      setAutoApprovePlans(get('auto_approve_lesson_plans', true) !== false);
+      setPlanEditableTeacher(get('lesson_plan_editable', true) !== false);
+      setPlanEditableAdmin(get('lesson_plan_admin_editable', true) !== false);
+      setAutoApproveContent(get('auto_approve_content', false) === true);
+      const q = get('practice_weekly_quota', 50);
+      setPracticeQuota(typeof q === 'number' ? q : parseInt(q) || 50);
+    })();
+  }, [isSchoolAdminOrAbove, user?.school_id]);
+
+  const upsertSchoolSetting = async (key: string, value: any) => {
+    if (!user?.school_id) return;
+    setSavingSchool(true);
+    const { error } = await (supabase as any).from('school_settings').upsert(
+      { school_id: user.school_id, key, value, updated_by: user.user_id, updated_at: new Date().toISOString() },
+      { onConflict: 'school_id,key' }
+    );
+    setSavingSchool(false);
+    if (error) toast.error('Failed to save: ' + error.message);
+    else toast.success('Setting saved');
+  };
+
   const toggleDemoCredentials = async () => {
     setLoadingSettings(true);
     const newValue = !showDemoCredentials;
