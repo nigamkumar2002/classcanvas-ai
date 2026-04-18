@@ -30,6 +30,7 @@ import ProfilePage from "@/pages/ProfilePage";
 import ComplaintsPage from "@/pages/ComplaintsPage";
 import PracticePage from "@/pages/PracticePage";
 import StudyMaterialPrintPage from "@/pages/StudyMaterialPrintPage";
+import BulkImportPage from "@/pages/BulkImportPage";
 import NotFound from "./pages/NotFound";
 
 const AppRoutes = () => {
@@ -88,6 +89,7 @@ const AppRoutes = () => {
       <Route path="/complaints" element={wrap(ComplaintsPage)} />
       <Route path="/practice" element={wrap(PracticePage, ['student'])} />
       <Route path="/study-material-print" element={wrap(StudyMaterialPrintPage, ['developer', 'super_admin', 'admin'])} />
+      <Route path="/bulk-import" element={wrap(BulkImportPage, ['developer'])} />
 
       <Route path="*" element={<NotFound />} />
     </Routes>
