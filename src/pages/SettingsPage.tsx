@@ -367,4 +367,3 @@ const ToggleRow: React.FC<ToggleRowProps> = ({ icon, title, desc, value, disable
 );
 
 export default SettingsPage;
-export default SettingsPage;
