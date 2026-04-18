@@ -338,4 +338,33 @@ const SettingsPage = () => {
   );
 };
 
+interface ToggleRowProps {
+  icon: React.ReactNode;
+  title: string;
+  desc: string;
+  value: boolean;
+  disabled?: boolean;
+  onChange: (v: boolean) => void;
+}
+
+const ToggleRow: React.FC<ToggleRowProps> = ({ icon, title, desc, value, disabled, onChange }) => (
+  <div className="flex items-center justify-between gap-3 p-4 rounded-xl bg-muted/30 border border-border/50">
+    <div className="flex items-start gap-3 flex-1">
+      <div className="mt-0.5 flex-shrink-0">{icon}</div>
+      <div>
+        <p className="font-medium text-sm">{title}</p>
+        <p className="text-xs text-muted-foreground">{desc}</p>
+      </div>
+    </div>
+    <button
+      onClick={() => onChange(!value)}
+      disabled={disabled}
+      className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 disabled:opacity-50 ${value ? 'bg-primary' : 'bg-muted-foreground/30'}`}
+    >
+      <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${value ? 'translate-x-5' : 'translate-x-0'}`} />
+    </button>
+  </div>
+);
+
+export default SettingsPage;
 export default SettingsPage;
