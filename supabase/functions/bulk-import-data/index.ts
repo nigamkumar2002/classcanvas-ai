@@ -172,11 +172,17 @@ Deno.serve(async (req) => {
             if (!classId) { errors.push({ sheet: 'users', row: i + 2, identifier: ident, error: `class not found: ${r.class_name}` }); continue; }
           }
 
+          // Skip if email already used (idempotent re-import)
+          const { data: existingProfile } = await supabaseAdmin.from('profiles').select('user_id').eq('email', email).maybeSingle();
+          if (existingProfile) { continue; }
+
           const { data: createdUser, error: cuErr } = await supabaseAdmin.auth.admin.createUser({
             email, password, email_confirm: true,
             user_metadata: { full_name: r.full_name, role },
           });
           if (cuErr || !createdUser.user) {
+            // Tolerate "already registered" → skip silently
+            if (String(cuErr?.message || '').toLowerCase().includes('already')) continue;
             errors.push({ sheet: 'users', row: i + 2, identifier: ident, error: cuErr?.message || 'auth create failed' }); continue;
           }
 
@@ -273,7 +279,7 @@ Deno.serve(async (req) => {
       }
     }
 
-    // 5. CHAPTERS
+    // 5. CHAPTERS — supports missing class_name (fans out to all matching subjects in school)
     if (payload.chapters?.length) {
       for (let i = 0; i < payload.chapters.length; i++) {
         const r = payload.chapters[i];
@@ -282,35 +288,39 @@ Deno.serve(async (req) => {
           const schoolKey = (r.school_code || r.school_name || '').toString();
           const school = await findSchoolByKey(schoolKey);
           if (!school) { errors.push({ sheet: 'chapters', row: i + 2, identifier: ident, error: 'school not found' }); continue; }
-          if (!r.class_name || !r.subject_name || !r.name) { errors.push({ sheet: 'chapters', row: i + 2, identifier: ident, error: 'class_name, subject_name, name required' }); continue; }
+          if (!r.subject_name || !r.name) { errors.push({ sheet: 'chapters', row: i + 2, identifier: ident, error: 'subject_name and name required' }); continue; }
 
-          const ckey = `${school.id}|${String(r.class_name).trim().toLowerCase()}`;
-          let classId = classCache.get(ckey);
-          if (!classId) {
-            const { data: cl } = await supabaseAdmin.from('classes').select('id').eq('school_id', school.id).ilike('name', String(r.class_name).trim()).maybeSingle();
-            if (cl) { classId = cl.id; classCache.set(ckey, cl.id); }
-          }
-          if (!classId) { errors.push({ sheet: 'chapters', row: i + 2, identifier: ident, error: `class not found` }); continue; }
-
-          const sKey = `${school.id}|${classId}|${String(r.subject_name).trim().toLowerCase()}`;
-          let subjectId = subjectCache.get(sKey);
-          if (!subjectId) {
+          // Resolve target subject ids — either single (class_name given) or all matching (no class_name)
+          const subjectIds: string[] = [];
+          if (r.class_name) {
+            const ckey = `${school.id}|${String(r.class_name).trim().toLowerCase()}`;
+            let classId = classCache.get(ckey);
+            if (!classId) {
+              const { data: cl } = await supabaseAdmin.from('classes').select('id').eq('school_id', school.id).ilike('name', String(r.class_name).trim()).maybeSingle();
+              if (cl) { classId = cl.id; classCache.set(ckey, cl.id); }
+            }
+            if (!classId) { errors.push({ sheet: 'chapters', row: i + 2, identifier: ident, error: `class not found: ${r.class_name}` }); continue; }
             const { data: sb } = await supabaseAdmin.from('subjects').select('id').eq('school_id', school.id).eq('class_id', classId).ilike('name', String(r.subject_name).trim()).maybeSingle();
-            if (sb) { subjectId = sb.id; subjectCache.set(sKey, sb.id); }
+            if (!sb) { errors.push({ sheet: 'chapters', row: i + 2, identifier: ident, error: `subject not found in ${r.class_name}` }); continue; }
+            subjectIds.push(sb.id);
+          } else {
+            const { data: subs } = await supabaseAdmin.from('subjects').select('id').eq('school_id', school.id).ilike('name', String(r.subject_name).trim());
+            if (!subs?.length) { errors.push({ sheet: 'chapters', row: i + 2, identifier: ident, error: `no subjects named "${r.subject_name}" in school` }); continue; }
+            subjectIds.push(...subs.map(s => s.id));
           }
-          if (!subjectId) { errors.push({ sheet: 'chapters', row: i + 2, identifier: ident, error: `subject not found` }); continue; }
 
-          const chKey = `${school.id}|${subjectId}|${String(r.name).trim().toLowerCase()}`;
-          const { data: existing } = await supabaseAdmin.from('chapters').select('id').eq('school_id', school.id).eq('subject_id', subjectId).ilike('name', String(r.name).trim()).maybeSingle();
-          if (existing) { chapterCache.set(chKey, existing.id); continue; }
           const order = r.order_index ? Number(r.order_index) : 0;
-          const { data: ins, error: e } = await supabaseAdmin.from('chapters').insert({
-            school_id: school.id, subject_id: subjectId, name: String(r.name).trim(),
-            description: r.description || null, order_index: Number.isFinite(order) ? order : 0,
-          }).select('id').single();
-          if (e) { errors.push({ sheet: 'chapters', row: i + 2, identifier: ident, error: e.message }); continue; }
-          chapterCache.set(chKey, ins!.id);
-          created.chapters++;
+          let inserted = 0;
+          for (const subjectId of subjectIds) {
+            const { data: existing } = await supabaseAdmin.from('chapters').select('id').eq('school_id', school.id).eq('subject_id', subjectId).ilike('name', String(r.name).trim()).maybeSingle();
+            if (existing) continue; // skip duplicate
+            const { error: e } = await supabaseAdmin.from('chapters').insert({
+              school_id: school.id, subject_id: subjectId, name: String(r.name).trim(),
+              description: r.description || null, order_index: Number.isFinite(order) ? order : 0,
+            });
+            if (!e) inserted++;
+          }
+          if (inserted) created.chapters += inserted;
         } catch (err: any) {
           errors.push({ sheet: 'chapters', row: i + 2, identifier: ident, error: err.message });
         }
@@ -335,6 +345,10 @@ Deno.serve(async (req) => {
           if (!sb) { errors.push({ sheet: 'materials', row: i + 2, identifier: ident, error: 'subject not found' }); continue; }
           const { data: ch } = await supabaseAdmin.from('chapters').select('id').eq('school_id', school.id).eq('subject_id', sb.id).ilike('name', String(r.chapter_name).trim()).maybeSingle();
           if (!ch) { errors.push({ sheet: 'materials', row: i + 2, identifier: ident, error: 'chapter not found' }); continue; }
+
+          // Skip duplicate material (same chapter + same title)
+          const { data: existingMat } = await supabaseAdmin.from('materials').select('id').eq('chapter_id', ch.id).ilike('title', String(r.title).trim()).maybeSingle();
+          if (existingMat) continue;
 
           const { error: e } = await supabaseAdmin.from('materials').insert({
             school_id: school.id, chapter_id: ch.id, title: String(r.title).trim(),
