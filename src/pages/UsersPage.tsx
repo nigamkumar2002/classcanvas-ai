@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
-import { Users, Plus, Search, Mail, Shield, GraduationCap, BookOpen, UserCheck, X, Eye, EyeOff, School, Trash2, AlertTriangle, Upload, Pencil, ChevronLeft } from 'lucide-react';
+import { Users, Plus, Search, Mail, Shield, GraduationCap, BookOpen, UserCheck, X, Eye, EyeOff, School, Trash2, AlertTriangle, Upload, Pencil, ChevronLeft, KeyRound, Copy } from 'lucide-react';
 import { toast } from 'sonner';
 import BulkStudentImportModal from '@/components/users/BulkStudentImportModal';
 
