@@ -195,6 +195,50 @@ const UsersPage = () => {
   const [deleteConfirm, setDeleteConfirm] = useState<Profile | null>(null);
   const [deletingUser, setDeletingUser] = useState(false);
 
+  // Reset password modal
+  const [pwUser, setPwUser] = useState<Profile | null>(null);
+  const [pwValue, setPwValue] = useState('');
+  const [pwShow, setPwShow] = useState(false);
+  const [pwLoading, setPwLoading] = useState(false);
+  const [pwSuccess, setPwSuccess] = useState('');
+
+  const canResetPassword = (target: Profile) => {
+    if (target.is_demo) return false;
+    if (target.user_id === user?.user_id) return false;
+    if (myRole === 'developer') return ['super_admin', 'admin', 'teacher', 'student'].includes(target.role);
+    if (myRole === 'super_admin') return ['admin', 'teacher', 'student'].includes(target.role);
+    if (myRole === 'admin') return ['teacher', 'student'].includes(target.role);
+    return false;
+  };
+
+  const generateRandomPassword = () => {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
+    let out = '';
+    for (let i = 0; i < 10; i++) out += chars[Math.floor(Math.random() * chars.length)];
+    setPwValue(out);
+    setPwShow(true);
+  };
+
+  const handleResetPassword = async () => {
+    if (!pwUser) return;
+    if (pwValue.length < 6) { toast.error('Password must be at least 6 characters'); return; }
+    setPwLoading(true);
+    setPwSuccess('');
+    try {
+      const { data, error } = await supabase.functions.invoke('reset-user-password', {
+        body: { target_user_id: pwUser.user_id, new_password: pwValue },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      setPwSuccess(`✅ Password updated. Share it with ${pwUser.full_name} so they can sign in.`);
+      toast.success('Password changed successfully');
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to change password');
+    } finally {
+      setPwLoading(false);
+    }
+  };
+
   const canDeleteUser = (target: Profile) => {
     if (target.user_id === user?.user_id) return false;
     if (user?.role === 'developer') return true;
