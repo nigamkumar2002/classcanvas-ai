@@ -70,14 +70,24 @@ const cellToText = (value: unknown) => {
 
 const pad2 = (n: number) => String(n).padStart(2, '0');
 
+// xlsx with cellDates:true creates Dates at UTC midnight. Use UTC getters so
+// timezones east of UTC (e.g. IST +5:30) don't shift the calendar day back.
+const dateToIsoUTC = (d: Date) =>
+  `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())}`;
+
 const dateToLocalIso = (d: Date) =>
   `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 
 const excelValueToIsoDate = (value: unknown) => {
-  // Excel cells parsed as Date by xlsx are at local midnight — never use toISOString()
-  // because in timezones east of UTC (e.g. IST +5:30) it shifts the date back one day.
   if (value instanceof Date && !Number.isNaN(value.getTime())) {
-    return dateToLocalIso(value);
+    // If the Date is exactly UTC midnight (xlsx cellDates output), read as UTC.
+    // Otherwise (e.g. user-typed local date) read as local.
+    const isUtcMidnight =
+      value.getUTCHours() === 0 &&
+      value.getUTCMinutes() === 0 &&
+      value.getUTCSeconds() === 0 &&
+      value.getUTCMilliseconds() === 0;
+    return isUtcMidnight ? dateToIsoUTC(value) : dateToLocalIso(value);
   }
 
   if (typeof value === 'number') {
