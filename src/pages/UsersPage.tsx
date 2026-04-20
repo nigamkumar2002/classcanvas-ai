@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
-import { Users, Plus, Search, Mail, Shield, GraduationCap, BookOpen, UserCheck, X, Eye, EyeOff, School, Trash2, AlertTriangle, Upload, Pencil, ChevronLeft } from 'lucide-react';
+import { Users, Plus, Search, Mail, Shield, GraduationCap, BookOpen, UserCheck, X, Eye, EyeOff, School, Trash2, AlertTriangle, Upload, Pencil, ChevronLeft, KeyRound, Copy } from 'lucide-react';
 import { toast } from 'sonner';
 import BulkStudentImportModal from '@/components/users/BulkStudentImportModal';
 
@@ -195,6 +195,50 @@ const UsersPage = () => {
   const [deleteConfirm, setDeleteConfirm] = useState<Profile | null>(null);
   const [deletingUser, setDeletingUser] = useState(false);
 
+  // Reset password modal
+  const [pwUser, setPwUser] = useState<Profile | null>(null);
+  const [pwValue, setPwValue] = useState('');
+  const [pwShow, setPwShow] = useState(false);
+  const [pwLoading, setPwLoading] = useState(false);
+  const [pwSuccess, setPwSuccess] = useState('');
+
+  const canResetPassword = (target: Profile) => {
+    if (target.is_demo) return false;
+    if (target.user_id === user?.user_id) return false;
+    if (myRole === 'developer') return ['super_admin', 'admin', 'teacher', 'student'].includes(target.role);
+    if (myRole === 'super_admin') return ['admin', 'teacher', 'student'].includes(target.role);
+    if (myRole === 'admin') return ['teacher', 'student'].includes(target.role);
+    return false;
+  };
+
+  const generateRandomPassword = () => {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
+    let out = '';
+    for (let i = 0; i < 10; i++) out += chars[Math.floor(Math.random() * chars.length)];
+    setPwValue(out);
+    setPwShow(true);
+  };
+
+  const handleResetPassword = async () => {
+    if (!pwUser) return;
+    if (pwValue.length < 6) { toast.error('Password must be at least 6 characters'); return; }
+    setPwLoading(true);
+    setPwSuccess('');
+    try {
+      const { data, error } = await supabase.functions.invoke('reset-user-password', {
+        body: { target_user_id: pwUser.user_id, new_password: pwValue },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      setPwSuccess(`✅ Password updated. Share it with ${pwUser.full_name} so they can sign in.`);
+      toast.success('Password changed successfully');
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to change password');
+    } finally {
+      setPwLoading(false);
+    }
+  };
+
   const canDeleteUser = (target: Profile) => {
     if (target.user_id === user?.user_id) return false;
     if (user?.role === 'developer') return true;
@@ -383,6 +427,12 @@ const UsersPage = () => {
                               <Pencil className="w-4 h-4" />
                             </button>
                           )}
+                          {canResetPassword(u) && (
+                            <button onClick={() => { setPwUser(u); setPwValue(''); setPwShow(false); setPwSuccess(''); }}
+                              className="p-2 rounded-lg text-blue-600 hover:bg-blue-50 transition-colors" title="Change password">
+                              <KeyRound className="w-4 h-4" />
+                            </button>
+                          )}
                           {canDeleteUser(u) && (
                             <button onClick={() => setDeleteConfirm(u)}
                               className="p-2 rounded-lg text-destructive hover:bg-destructive/10 transition-colors" title="Remove user">
@@ -534,6 +584,64 @@ const UsersPage = () => {
             fetchUsers();
           }}
         />
+      )}
+
+      {/* Reset Password Modal */}
+      {pwUser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+          <div className="bg-card rounded-2xl shadow-xl border border-border w-full max-w-md">
+            <div className="flex items-center justify-between p-6 border-b border-border">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center"><KeyRound className="w-5 h-5 text-blue-600" /></div>
+                <div>
+                  <h2 className="text-lg font-bold">Change Password</h2>
+                  <p className="text-xs text-muted-foreground">{pwUser.full_name} · {pwUser.email}</p>
+                </div>
+              </div>
+              <button onClick={() => setPwUser(null)} className="p-2 rounded-xl hover:bg-muted"><X className="w-5 h-5" /></button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-sm font-semibold">New Password *</label>
+                  <button type="button" onClick={generateRandomPassword}
+                    className="text-xs text-blue-600 hover:text-blue-700 font-medium">Generate strong password</button>
+                </div>
+                <div className="relative">
+                  <input type={pwShow ? 'text' : 'password'} value={pwValue}
+                    onChange={e => setPwValue(e.target.value)} placeholder="Min 6 characters" autoFocus
+                    className="w-full px-4 py-2.5 pr-20 rounded-xl border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 text-sm font-mono" />
+                  <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                    {pwValue && (
+                      <button type="button" onClick={() => { navigator.clipboard.writeText(pwValue); toast.success('Copied'); }}
+                        className="p-1.5 text-muted-foreground hover:text-foreground" title="Copy">
+                        <Copy className="w-4 h-4" />
+                      </button>
+                    )}
+                    <button type="button" onClick={() => setPwShow(!pwShow)}
+                      className="p-1.5 text-muted-foreground hover:text-foreground">
+                      {pwShow ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+              </div>
+              {pwSuccess && (
+                <div className="p-3 rounded-xl bg-green-50 border border-green-200 text-green-700 text-sm">{pwSuccess}</div>
+              )}
+              <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs">
+                ⚠️ Share the new password securely with the user. They will need it to sign in.
+              </div>
+            </div>
+            <div className="flex gap-3 p-6 border-t border-border">
+              <button onClick={() => setPwUser(null)} className="flex-1 py-2.5 rounded-xl border border-border font-medium text-sm hover:bg-muted">Close</button>
+              <button onClick={handleResetPassword} disabled={pwLoading || pwValue.length < 6}
+                className="flex-1 py-2.5 rounded-xl bg-blue-600 text-white font-medium text-sm hover:opacity-90 disabled:opacity-50 flex items-center justify-center gap-2">
+                {pwLoading ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <KeyRound className="w-4 h-4" />}
+                {pwLoading ? 'Updating...' : 'Update Password'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Delete User Confirmation */}
