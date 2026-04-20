@@ -68,16 +68,23 @@ const cellToText = (value: unknown) => {
   return String(value).trim();
 };
 
+const pad2 = (n: number) => String(n).padStart(2, '0');
+
+const dateToLocalIso = (d: Date) =>
+  `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+
 const excelValueToIsoDate = (value: unknown) => {
+  // Excel cells parsed as Date by xlsx are at local midnight — never use toISOString()
+  // because in timezones east of UTC (e.g. IST +5:30) it shifts the date back one day.
   if (value instanceof Date && !Number.isNaN(value.getTime())) {
-    return value.toISOString().slice(0, 10);
+    return dateToLocalIso(value);
   }
 
   if (typeof value === 'number') {
     const parsed = XLSX.SSF.parse_date_code(value);
     if (!parsed) return '';
 
-    return `${parsed.y}-${String(parsed.m).padStart(2, '0')}-${String(parsed.d).padStart(2, '0')}`;
+    return `${parsed.y}-${pad2(parsed.m)}-${pad2(parsed.d)}`;
   }
 
   const text = cellToText(value);
@@ -85,16 +92,33 @@ const excelValueToIsoDate = (value: unknown) => {
 
   if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return text;
 
-  const slashMatch = text.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
+  // DDMMYYYY (8 digits, no separator) — common in admission sheets
+  const compact = text.match(/^(\d{2})(\d{2})(\d{4})$/);
+  if (compact) {
+    const [, day, month, year] = compact;
+    return `${year}-${month}-${day}`;
+  }
+
+  // DD/MM/YYYY or DD-MM-YYYY
+  const slashMatch = text.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})$/);
   if (slashMatch) {
-    const [, day, month, year] = slashMatch;
+    let [, day, month, year] = slashMatch;
+    if (year.length === 2) year = (Number(year) < 50 ? '20' : '19') + year;
     return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
   }
 
+  // YYYY/MM/DD
+  const ymd = text.match(/^(\d{4})[/-](\d{1,2})[/-](\d{1,2})$/);
+  if (ymd) {
+    const [, year, month, day] = ymd;
+    return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+  }
+
+  // Last-resort parse (still avoid toISOString to dodge timezone shift)
   const parsed = new Date(text);
   if (Number.isNaN(parsed.getTime())) return '';
 
-  return parsed.toISOString().slice(0, 10);
+  return dateToLocalIso(parsed);
 };
 
 const BulkStudentImportModal: React.FC<BulkStudentImportModalProps> = ({ onClose, onSuccess, schools = [] }) => {
