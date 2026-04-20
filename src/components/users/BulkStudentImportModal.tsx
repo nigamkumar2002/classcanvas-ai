@@ -248,6 +248,7 @@ const BulkStudentImportModal: React.FC<BulkStudentImportModalProps> = ({ onClose
 
       const rawRows = XLSX.utils.sheet_to_json<Record<string, unknown>>(firstSheet, {
         defval: '',
+        raw: false,
       });
 
       if (rawRows.length === 0) throw new Error('No rows found in the uploaded spreadsheet');
