@@ -427,6 +427,12 @@ const UsersPage = () => {
                               <Pencil className="w-4 h-4" />
                             </button>
                           )}
+                          {canResetPassword(u) && (
+                            <button onClick={() => { setPwUser(u); setPwValue(''); setPwShow(false); setPwSuccess(''); }}
+                              className="p-2 rounded-lg text-blue-600 hover:bg-blue-50 transition-colors" title="Change password">
+                              <KeyRound className="w-4 h-4" />
+                            </button>
+                          )}
                           {canDeleteUser(u) && (
                             <button onClick={() => setDeleteConfirm(u)}
                               className="p-2 rounded-lg text-destructive hover:bg-destructive/10 transition-colors" title="Remove user">
