@@ -182,7 +182,9 @@ const SettingsPage = () => {
         </div>
       )}
 
-      {/* School Settings (Admin / Super Admin) */}
+      {/* Board Preparation (Super Admin / Developer) */}
+      <BoardPrepSettings />
+
       {isSchoolAdminOrAbove && (
         <div className="bg-card rounded-2xl border border-border shadow-card p-6">
           <div className="flex items-center gap-3 mb-6">
