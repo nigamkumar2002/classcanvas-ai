@@ -145,7 +145,7 @@ const BoardPrepUploadPage: React.FC = () => {
                   {u.status === 'completed' && (
                     <button onClick={() => setReviewing(u)} className="text-sm px-3 py-1 bg-primary text-primary-foreground rounded-lg">Review & Approve</button>
                   )}
-                  {u.error_log && <AlertTriangle className="w-4 h-4 text-red-500" titleAccess={u.error_log} />}
+                  {u.error_log && <span title={u.error_log}><AlertTriangle className="w-4 h-4 text-destructive" /></span>}
                 </div>
               </div>
             ))}

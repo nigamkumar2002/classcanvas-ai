@@ -42,11 +42,11 @@ const BoardPrepPage: React.FC = () => {
         .from('questions')
         .select('chapter_id')
         .eq('source', 'pyq') as any;
-      const chapterIds = Array.from(new Set((qs || []).map((q: any) => q.chapter_id).filter(Boolean)));
+      const chapterIds = Array.from(new Set((qs || []).map((q: any) => q.chapter_id).filter(Boolean))) as string[];
       if (chapterIds.length) {
         const { data: chRows } = await supabase.from('chapters').select('id, name, subject_id').in('id', chapterIds) as any;
         setChapters(chRows || []);
-        const subjIds = Array.from(new Set((chRows || []).map((c: any) => c.subject_id)));
+        const subjIds = Array.from(new Set((chRows || []).map((c: any) => c.subject_id))) as string[];
         if (subjIds.length) {
           const { data: sRows } = await supabase.from('subjects').select('id, name').in('id', subjIds) as any;
           setSubjects(sRows || []);
