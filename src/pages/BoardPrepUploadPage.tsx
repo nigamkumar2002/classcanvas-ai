@@ -29,10 +29,11 @@ const BoardPrepUploadPage: React.FC = () => {
   const [uploads, setUploads] = useState<UploadRow[]>([]);
   const [reviewing, setReviewing] = useState<UploadRow | null>(null);
 
-  const canManage = user && ['developer', 'super_admin', 'admin'].includes(user.role);
+  const canUpload = user && ['developer', 'super_admin', 'admin', 'teacher'].includes(user.role);
+  const canApprove = user && ['developer', 'super_admin', 'admin'].includes(user.role);
 
   useEffect(() => {
-    if (!canManage) return;
+    if (!canUpload) return;
     refresh();
     (async () => {
       const { data } = await supabase.from('classes').select('id, name, grade_level').eq('grade_level', 10) as any;
@@ -46,8 +47,8 @@ const BoardPrepUploadPage: React.FC = () => {
     setUploads(data || []);
   };
 
-  if (!canManage) {
-    return <div className="p-8 text-center text-muted-foreground">Only admins can manage PYQ uploads.</div>;
+  if (!canUpload) {
+    return <div className="p-8 text-center text-muted-foreground">You don't have permission to access PYQ uploads.</div>;
   }
 
   const handleUpload = async () => {
