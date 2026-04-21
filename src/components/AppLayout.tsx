@@ -4,11 +4,12 @@ import {
   GraduationCap, LayoutDashboard, BookOpen, Users, Settings,
   LogOut, ChevronLeft, ChevronRight, PlayCircle, FileText,
   BarChart3, School, Upload, ClipboardList, Search, Menu, Calendar, Megaphone,
-  CheckSquare, UserCheck, Award, MessageSquare, DollarSign, Star, Shield, BookMarked, User, NotebookPen, AlertTriangle, Brain, Printer, FileSpreadsheet
+  CheckSquare, UserCheck, Award, MessageSquare, DollarSign, Star, Shield, BookMarked, User, NotebookPen, AlertTriangle, Brain, Printer, FileSpreadsheet, Trophy
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
 import NotificationDropdown from '@/components/NotificationDropdown';
+import { useBoardPrepAccess } from '@/hooks/useBoardPrepAccess';
 
 const ROLE_MENUS: Record<string, { label: string; icon: React.ElementType; path: string }[]> = {
   developer: [
@@ -151,7 +152,11 @@ const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
   const [mobileOpen, setMobileOpen] = useState(false);
 
   const role = user?.role ?? 'student';
-  const menuItems = ROLE_MENUS[role] || ROLE_MENUS.student;
+  const { enabled: boardPrepEnabled } = useBoardPrepAccess();
+  const baseMenu = ROLE_MENUS[role] || ROLE_MENUS.student;
+  const menuItems = boardPrepEnabled
+    ? [...baseMenu.slice(0, 4), { label: 'Board Preparation', icon: Trophy, path: '/board-prep' }, ...baseMenu.slice(4)]
+    : baseMenu;
   const roleColor = ROLE_COLORS[role] || ROLE_COLORS.student;
   const roleLabel = ROLE_LABELS[role] || 'Student';
 
