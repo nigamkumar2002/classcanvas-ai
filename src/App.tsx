@@ -31,6 +31,8 @@ import ComplaintsPage from "@/pages/ComplaintsPage";
 import PracticePage from "@/pages/PracticePage";
 import StudyMaterialPrintPage from "@/pages/StudyMaterialPrintPage";
 import BulkImportPage from "@/pages/BulkImportPage";
+import BoardPrepPage from "@/pages/BoardPrepPage";
+import BoardPrepUploadPage from "@/pages/BoardPrepUploadPage";
 import NotFound from "./pages/NotFound";
 
 const AppRoutes = () => {
@@ -90,6 +92,8 @@ const AppRoutes = () => {
       <Route path="/practice" element={wrap(PracticePage, ['student'])} />
       <Route path="/study-material-print" element={wrap(StudyMaterialPrintPage, ['developer', 'super_admin', 'admin'])} />
       <Route path="/bulk-import" element={wrap(BulkImportPage, ['developer'])} />
+      <Route path="/board-prep" element={wrap(BoardPrepPage)} />
+      <Route path="/board-prep/upload" element={wrap(BoardPrepUploadPage, ['developer', 'super_admin', 'admin'])} />
 
       <Route path="*" element={<NotFound />} />
     </Routes>

@@ -3,6 +3,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { Settings, User, Bell, Shield, Globe, Save, Lock, Eye, EyeOff, NotebookPen, CheckCircle, Brain } from 'lucide-react';
 import { toast } from 'sonner';
+import BoardPrepSettings from '@/components/settings/BoardPrepSettings';
 
 const SettingsPage = () => {
   const { user } = useAuth();
@@ -181,7 +182,9 @@ const SettingsPage = () => {
         </div>
       )}
 
-      {/* School Settings (Admin / Super Admin) */}
+      {/* Board Preparation (Super Admin / Developer) */}
+      <BoardPrepSettings />
+
       {isSchoolAdminOrAbove && (
         <div className="bg-card rounded-2xl border border-border shadow-card p-6">
           <div className="flex items-center gap-3 mb-6">
