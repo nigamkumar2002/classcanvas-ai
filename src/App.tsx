@@ -93,7 +93,7 @@ const AppRoutes = () => {
       <Route path="/study-material-print" element={wrap(StudyMaterialPrintPage, ['developer', 'super_admin', 'admin'])} />
       <Route path="/bulk-import" element={wrap(BulkImportPage, ['developer'])} />
       <Route path="/board-prep" element={wrap(BoardPrepPage)} />
-      <Route path="/board-prep/upload" element={wrap(BoardPrepUploadPage, ['developer', 'super_admin', 'admin'])} />
+      <Route path="/board-prep/upload" element={wrap(BoardPrepUploadPage, ['developer', 'super_admin', 'admin', 'teacher'])} />
 
       <Route path="*" element={<NotFound />} />
     </Routes>
