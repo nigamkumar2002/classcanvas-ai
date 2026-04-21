@@ -143,8 +143,11 @@ const BoardPrepUploadPage: React.FC = () => {
                     u.status === 'failed' ? 'bg-red-100 text-red-800' :
                     'bg-amber-100 text-amber-800'
                   }`}>{u.status}</span>
-                  {u.status === 'completed' && (
+                  {u.status === 'completed' && canApprove && (
                     <button onClick={() => setReviewing(u)} className="text-sm px-3 py-1 bg-primary text-primary-foreground rounded-lg">Review & Approve</button>
+                  )}
+                  {u.status === 'completed' && !canApprove && (
+                    <span className="text-xs px-2 py-1 rounded-full bg-amber-100 text-amber-800 font-medium">Awaiting admin approval</span>
                   )}
                   {u.error_log && <span title={u.error_log}><AlertTriangle className="w-4 h-4 text-destructive" /></span>}
                 </div>
