@@ -3,6 +3,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { Settings, User, Bell, Shield, Globe, Save, Lock, Eye, EyeOff, NotebookPen, CheckCircle, Brain } from 'lucide-react';
 import { toast } from 'sonner';
+import BoardPrepSettings from '@/components/settings/BoardPrepSettings';
 
 const SettingsPage = () => {
   const { user } = useAuth();
