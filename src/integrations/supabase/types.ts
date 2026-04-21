@@ -178,6 +178,33 @@ export type Database = {
         }
         Relationships: []
       }
+      board_prep_settings: {
+        Row: {
+          created_at: string
+          enabled_class_ids: string[]
+          id: string
+          school_id: string
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          created_at?: string
+          enabled_class_ids?: string[]
+          id?: string
+          school_id: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          created_at?: string
+          enabled_class_ids?: string[]
+          id?: string
+          school_id?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: []
+      }
       certificates: {
         Row: {
           certificate_type: string
@@ -552,11 +579,14 @@ export type Database = {
           day_plan_id: string | null
           description: string | null
           duration_minutes: number
+          exam_kind: string
           id: string
           is_active: boolean
+          is_board_prep: boolean
           leaderboard_visible: boolean
           pass_marks: number
           publish_status: string
+          pyq_year: number | null
           scheduled_date: string | null
           scheduled_end_time: string | null
           scheduled_start_time: string | null
@@ -572,11 +602,14 @@ export type Database = {
           day_plan_id?: string | null
           description?: string | null
           duration_minutes?: number
+          exam_kind?: string
           id?: string
           is_active?: boolean
+          is_board_prep?: boolean
           leaderboard_visible?: boolean
           pass_marks?: number
           publish_status?: string
+          pyq_year?: number | null
           scheduled_date?: string | null
           scheduled_end_time?: string | null
           scheduled_start_time?: string | null
@@ -592,11 +625,14 @@ export type Database = {
           day_plan_id?: string | null
           description?: string | null
           duration_minutes?: number
+          exam_kind?: string
           id?: string
           is_active?: boolean
+          is_board_prep?: boolean
           leaderboard_visible?: boolean
           pass_marks?: number
           publish_status?: string
+          pyq_year?: number | null
           scheduled_date?: string | null
           scheduled_end_time?: string | null
           scheduled_start_time?: string | null
@@ -1494,9 +1530,68 @@ export type Database = {
           },
         ]
       }
+      pyq_uploads: {
+        Row: {
+          created_at: string
+          error_log: string | null
+          extracted_questions: Json | null
+          file_name: string
+          file_url: string
+          id: string
+          pyq_year: number | null
+          questions_extracted: number
+          questions_inserted: number
+          questions_skipped: number
+          raw_ai_response: Json | null
+          school_id: string
+          status: string
+          subject_id: string | null
+          updated_at: string
+          uploaded_by: string
+        }
+        Insert: {
+          created_at?: string
+          error_log?: string | null
+          extracted_questions?: Json | null
+          file_name: string
+          file_url: string
+          id?: string
+          pyq_year?: number | null
+          questions_extracted?: number
+          questions_inserted?: number
+          questions_skipped?: number
+          raw_ai_response?: Json | null
+          school_id: string
+          status?: string
+          subject_id?: string | null
+          updated_at?: string
+          uploaded_by: string
+        }
+        Update: {
+          created_at?: string
+          error_log?: string | null
+          extracted_questions?: Json | null
+          file_name?: string
+          file_url?: string
+          id?: string
+          pyq_year?: number | null
+          questions_extracted?: number
+          questions_inserted?: number
+          questions_skipped?: number
+          raw_ai_response?: Json | null
+          school_id?: string
+          status?: string
+          subject_id?: string | null
+          updated_at?: string
+          uploaded_by?: string
+        }
+        Relationships: []
+      }
       questions: {
         Row: {
+          chapter_id: string | null
           correct_answer: string
+          difficulty: string | null
           exam_id: string
           id: string
           marks: number
@@ -1505,11 +1600,17 @@ export type Database = {
           option_c: string
           option_d: string
           order_index: number
+          pyq_year: number | null
+          question_hash: string | null
           question_text: string
           school_id: string | null
+          source: string
+          tags: string[] | null
         }
         Insert: {
+          chapter_id?: string | null
           correct_answer: string
+          difficulty?: string | null
           exam_id: string
           id?: string
           marks?: number
@@ -1518,11 +1619,17 @@ export type Database = {
           option_c: string
           option_d: string
           order_index?: number
+          pyq_year?: number | null
+          question_hash?: string | null
           question_text: string
           school_id?: string | null
+          source?: string
+          tags?: string[] | null
         }
         Update: {
+          chapter_id?: string | null
           correct_answer?: string
+          difficulty?: string | null
           exam_id?: string
           id?: string
           marks?: number
@@ -1531,8 +1638,12 @@ export type Database = {
           option_c?: string
           option_d?: string
           order_index?: number
+          pyq_year?: number | null
+          question_hash?: string | null
           question_text?: string
           school_id?: string | null
+          source?: string
+          tags?: string[] | null
         }
         Relationships: [
           {
@@ -1550,6 +1661,51 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      revision_items: {
+        Row: {
+          chapter_id: string | null
+          created_at: string
+          id: string
+          last_seen_at: string
+          mastery_status: string
+          priority: string
+          question_id: string
+          school_id: string
+          student_id: string
+          subject_id: string | null
+          updated_at: string
+          wrong_count: number
+        }
+        Insert: {
+          chapter_id?: string | null
+          created_at?: string
+          id?: string
+          last_seen_at?: string
+          mastery_status?: string
+          priority?: string
+          question_id: string
+          school_id: string
+          student_id: string
+          subject_id?: string | null
+          updated_at?: string
+          wrong_count?: number
+        }
+        Update: {
+          chapter_id?: string | null
+          created_at?: string
+          id?: string
+          last_seen_at?: string
+          mastery_status?: string
+          priority?: string
+          question_id?: string
+          school_id?: string
+          student_id?: string
+          subject_id?: string | null
+          updated_at?: string
+          wrong_count?: number
+        }
+        Relationships: []
       }
       schedules: {
         Row: {
@@ -1802,6 +1958,27 @@ export type Database = {
     }
     Functions: {
       escalate_stale_complaints: { Args: never; Returns: number }
+      get_board_prep_question_pool: {
+        Args: {
+          _chapter_id?: string
+          _limit?: number
+          _pyq_year?: number
+          _school_id: string
+          _subject_id?: string
+        }
+        Returns: {
+          chapter_id: string
+          difficulty: string
+          id: string
+          marks: number
+          option_a: string
+          option_b: string
+          option_c: string
+          option_d: string
+          pyq_year: number
+          question_text: string
+        }[]
+      }
       get_exam_questions_for_student: {
         Args: { _exam_id: string }
         Returns: {
@@ -1841,6 +2018,10 @@ export type Database = {
           _role: Database["public"]["Enums"]["app_role"]
           _user_id: string
         }
+        Returns: boolean
+      }
+      is_board_prep_enabled_for_user: {
+        Args: { _user_id: string }
         Returns: boolean
       }
     }
