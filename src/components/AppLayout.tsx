@@ -154,8 +154,12 @@ const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
   const role = user?.role ?? 'student';
   const { enabled: boardPrepEnabled } = useBoardPrepAccess();
   const baseMenu = ROLE_MENUS[role] || ROLE_MENUS.student;
-  const menuItems = boardPrepEnabled
-    ? [...baseMenu.slice(0, 4), { label: 'Board Preparation', icon: Trophy, path: '/board-prep' }, ...baseMenu.slice(4)]
+  const canManagePYQ = ['developer', 'super_admin', 'admin', 'teacher'].includes(role);
+  const extras: { label: string; icon: React.ElementType; path: string }[] = [];
+  if (boardPrepEnabled) extras.push({ label: 'Board Preparation', icon: Trophy, path: '/board-prep' });
+  if (canManagePYQ) extras.push({ label: 'PYQ Upload', icon: Upload, path: '/board-prep/upload' });
+  const menuItems = extras.length
+    ? [...baseMenu.slice(0, 4), ...extras, ...baseMenu.slice(4)]
     : baseMenu;
   const roleColor = ROLE_COLORS[role] || ROLE_COLORS.student;
   const roleLabel = ROLE_LABELS[role] || 'Student';
