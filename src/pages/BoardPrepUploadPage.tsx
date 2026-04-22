@@ -80,14 +80,24 @@ const BoardPrepUploadPage: React.FC = () => {
       }).select('*').single();
       if (insErr) throw insErr;
 
-      toast.success('Uploaded! AI extraction running in background…');
+      toast.success('Uploaded. Extraction started…');
       setFile(null);
       await refresh();
 
-      // Fire-and-forget: function returns 202 instantly; UI polls for completion
-      supabase.functions.invoke('ingest-pyq-pdf', { body: { upload_id: row.id } }).catch(err => {
-        console.error('Trigger error', err);
+      const { error: invokeError } = await supabase.functions.invoke('ingest-pyq-pdf', {
+        body: { upload_id: row.id },
       });
+
+      if (invokeError) {
+        const failureMessage = invokeError.message || 'Failed to start extraction';
+        await (supabase as any)
+          .from('pyq_uploads')
+          .update({ status: 'failed', error_log: failureMessage })
+          .eq('id', row.id);
+
+        await refresh();
+        throw new Error(failureMessage);
+      }
     } catch (e: any) {
       toast.error(e.message || 'Upload failed');
     } finally {
@@ -127,7 +137,7 @@ const BoardPrepUploadPage: React.FC = () => {
         <button onClick={handleUpload} disabled={uploading || !file || !classId}
           className="px-4 py-2 bg-primary text-primary-foreground rounded-lg font-medium disabled:opacity-50 flex items-center gap-2">
           {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
-          {uploading ? 'Processing…' : 'Upload & Extract with AI'}
+          {uploading ? 'Starting extraction…' : 'Upload & Extract with AI'}
         </button>
       </div>
 
