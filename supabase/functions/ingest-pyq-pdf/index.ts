@@ -1,6 +1,7 @@
 // Ingest a PYQ PDF: extract MCQs via Lovable AI in the BACKGROUND.
 // Returns 202 immediately; client polls pyq_uploads.status.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { encodeBase64 } from 'https://deno.land/std@0.224.0/encoding/base64.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -25,9 +26,13 @@ interface ExtractedQ {
   difficulty?: 'easy' | 'medium' | 'hard';
 }
 
+const EXPECTED_QUESTION_COUNT = 100;
+
 async function processInBackground(uploadId: string, supabaseUrl: string, serviceKey: string, lovableKey: string) {
   const admin = createClient(supabaseUrl, serviceKey);
   try {
+    await admin.from('pyq_uploads').update({ status: 'processing', error_log: null }).eq('id', uploadId);
+
     const { data: upload, error: upErr } = await admin
       .from('pyq_uploads').select('*').eq('id', uploadId).single();
     if (upErr || !upload) throw new Error('Upload not found');
@@ -37,12 +42,7 @@ async function processInBackground(uploadId: string, supabaseUrl: string, servic
     if (!fileResp.ok) throw new Error(`Cannot fetch PDF: ${fileResp.status}`);
     const pdfBuffer = await fileResp.arrayBuffer();
     const bytes = new Uint8Array(pdfBuffer);
-    let binary = '';
-    const CHUNK = 0x8000;
-    for (let i = 0; i < bytes.length; i += CHUNK) {
-      binary += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + CHUNK)));
-    }
-    const pdfBase64 = btoa(binary);
+    const pdfBase64 = encodeBase64(bytes);
 
     // Use Gemini 2.5 Pro: BSEB papers have 100 MCQs — Pro reliably extracts all; Flash often truncates around 80.
     const NCERT_CHAPTERS = `
@@ -60,7 +60,7 @@ BSEB Class 10 NCERT chapters by subject (use the EXACT chapter name from this li
       body: JSON.stringify({
         model: 'google/gemini-2.5-pro',
         messages: [
-          { role: 'system', content: 'You are an expert BSEB Class 10 PYQ extractor. BSEB papers contain EXACTLY 100 objective MCQs (each with 4 options A/B/C/D). You MUST extract every single MCQ — do not stop early, do not summarize. Return only the structured tool call with all questions.' },
+          { role: 'system', content: 'You are an expert BSEB Class 10 PYQ extractor. BSEB papers contain EXACTLY 100 objective MCQs (each with 4 options A/B/C/D). You MUST extract every single MCQ, verify the final count, and only then return the structured tool call. Do not stop early, do not summarize.' },
           {
             role: 'user',
             content: [
@@ -126,9 +126,16 @@ ${NCERT_CHAPTERS}` },
     const args = JSON.parse(toolCall.function.arguments);
     const extracted: ExtractedQ[] = args.questions || [];
 
+    if (!Array.isArray(extracted) || extracted.length === 0) {
+      throw new Error('No questions extracted from PDF');
+    }
+
     await admin.from('pyq_uploads').update({
       questions_extracted: extracted.length,
       extracted_questions: extracted,
+      error_log: extracted.length < EXPECTED_QUESTION_COUNT
+        ? `Partial extraction: found ${extracted.length} of ${EXPECTED_QUESTION_COUNT} questions`
+        : null,
       status: 'completed',
     }).eq('id', uploadId);
   } catch (e) {
