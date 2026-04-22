@@ -10,6 +10,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
 import NotificationDropdown from '@/components/NotificationDropdown';
 import { useBoardPrepAccess } from '@/hooks/useBoardPrepAccess';
+import { usePageAudit } from '@/hooks/usePageAudit';
 
 const ROLE_MENUS: Record<string, { label: string; icon: React.ElementType; path: string }[]> = {
   developer: [
@@ -150,6 +151,7 @@ const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
   const navigate = useNavigate();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  usePageAudit();
 
   const role = user?.role ?? 'student';
   const { enabled: boardPrepEnabled } = useBoardPrepAccess();
