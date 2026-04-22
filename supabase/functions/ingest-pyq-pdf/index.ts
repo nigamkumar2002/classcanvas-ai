@@ -1,6 +1,7 @@
 // Ingest a PYQ PDF: extract MCQs via Lovable AI in the BACKGROUND.
 // Returns 202 immediately; client polls pyq_uploads.status.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { encodeBase64 } from 'https://deno.land/std@0.224.0/encoding/base64.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -24,6 +25,8 @@ interface ExtractedQ {
   chapter_name?: string;
   difficulty?: 'easy' | 'medium' | 'hard';
 }
+
+const EXPECTED_QUESTION_COUNT = 100;
 
 async function processInBackground(uploadId: string, supabaseUrl: string, serviceKey: string, lovableKey: string) {
   const admin = createClient(supabaseUrl, serviceKey);
