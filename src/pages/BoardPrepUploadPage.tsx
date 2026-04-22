@@ -2,12 +2,13 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
-import { Upload, Loader2, FileText, CheckCircle, AlertTriangle, Trash2 } from 'lucide-react';
+import { Upload, Loader2, FileText, CheckCircle, AlertTriangle, Trash2, Eye, Download } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface UploadRow {
   id: string;
   file_name: string;
+  file_url: string;
   pyq_year: number | null;
   status: string;
   questions_extracted: number;
@@ -47,6 +48,15 @@ const BoardPrepUploadPage: React.FC = () => {
     setUploads(data || []);
   };
 
+  // Poll every 4s while any upload is still pending/processing
+  useEffect(() => {
+    if (!canUpload) return;
+    const hasActive = uploads.some(u => u.status === 'pending' || u.status === 'processing');
+    if (!hasActive) return;
+    const interval = setInterval(refresh, 4000);
+    return () => clearInterval(interval);
+  }, [uploads, canUpload]);
+
   if (!canUpload) {
     return <div className="p-8 text-center text-muted-foreground">You don't have permission to access PYQ uploads.</div>;
   }
@@ -70,15 +80,14 @@ const BoardPrepUploadPage: React.FC = () => {
       }).select('*').single();
       if (insErr) throw insErr;
 
-      toast.success('Uploaded. Extracting questions with AI…');
+      toast.success('Uploaded! AI extraction running in background…');
       setFile(null);
       await refresh();
 
-      // Trigger AI extraction
-      const { data: extData, error: extErr } = await supabase.functions.invoke('ingest-pyq-pdf', { body: { upload_id: row.id } });
-      if (extErr) throw extErr;
-      toast.success(`Extracted ${extData?.extracted_count || 0} questions. Review and approve below.`);
-      await refresh();
+      // Fire-and-forget: function returns 202 instantly; UI polls for completion
+      supabase.functions.invoke('ingest-pyq-pdf', { body: { upload_id: row.id } }).catch(err => {
+        console.error('Trigger error', err);
+      });
     } catch (e: any) {
       toast.error(e.message || 'Upload failed');
     } finally {
@@ -136,13 +145,28 @@ const BoardPrepUploadPage: React.FC = () => {
                     <p className="text-xs text-muted-foreground">Year {u.pyq_year} · {u.questions_extracted} extracted · {u.questions_inserted} saved · {u.questions_skipped} dupes</p>
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className={`text-xs px-2 py-1 rounded-full font-medium ${
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className={`text-xs px-2 py-1 rounded-full font-medium flex items-center gap-1 ${
                     u.status === 'approved' ? 'bg-green-100 text-green-800' :
                     u.status === 'completed' ? 'bg-blue-100 text-blue-800' :
                     u.status === 'failed' ? 'bg-red-100 text-red-800' :
                     'bg-amber-100 text-amber-800'
-                  }`}>{u.status}</span>
+                  }`}>
+                    {(u.status === 'pending' || u.status === 'processing') && <Loader2 className="w-3 h-3 animate-spin" />}
+                    {u.status}
+                  </span>
+                  {u.file_url && (
+                    <>
+                      <a href={u.file_url} target="_blank" rel="noopener noreferrer"
+                        className="text-xs px-2 py-1 border rounded-lg flex items-center gap-1 hover:bg-muted" title="View PDF">
+                        <Eye className="w-3 h-3" /> View
+                      </a>
+                      <a href={u.file_url} download={u.file_name}
+                        className="text-xs px-2 py-1 border rounded-lg flex items-center gap-1 hover:bg-muted" title="Download PDF">
+                        <Download className="w-3 h-3" /> Download
+                      </a>
+                    </>
+                  )}
                   {u.status === 'completed' && canApprove && (
                     <button onClick={() => setReviewing(u)} className="text-sm px-3 py-1 bg-primary text-primary-foreground rounded-lg">Review & Approve</button>
                   )}
