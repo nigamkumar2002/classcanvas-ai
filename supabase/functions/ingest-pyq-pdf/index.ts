@@ -31,6 +31,8 @@ const EXPECTED_QUESTION_COUNT = 100;
 async function processInBackground(uploadId: string, supabaseUrl: string, serviceKey: string, lovableKey: string) {
   const admin = createClient(supabaseUrl, serviceKey);
   try {
+    await admin.from('pyq_uploads').update({ status: 'processing', error_log: null }).eq('id', uploadId);
+
     const { data: upload, error: upErr } = await admin
       .from('pyq_uploads').select('*').eq('id', uploadId).single();
     if (upErr || !upload) throw new Error('Upload not found');
@@ -40,12 +42,7 @@ async function processInBackground(uploadId: string, supabaseUrl: string, servic
     if (!fileResp.ok) throw new Error(`Cannot fetch PDF: ${fileResp.status}`);
     const pdfBuffer = await fileResp.arrayBuffer();
     const bytes = new Uint8Array(pdfBuffer);
-    let binary = '';
-    const CHUNK = 0x8000;
-    for (let i = 0; i < bytes.length; i += CHUNK) {
-      binary += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + CHUNK)));
-    }
-    const pdfBase64 = btoa(binary);
+    const pdfBase64 = encodeBase64(bytes);
 
     // Use Gemini 2.5 Pro: BSEB papers have 100 MCQs — Pro reliably extracts all; Flash often truncates around 80.
     const NCERT_CHAPTERS = `
