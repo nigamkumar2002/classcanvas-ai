@@ -1,5 +1,5 @@
-// Ingest a PYQ PDF: extract MCQs via Lovable AI, auto-create chapters,
-// dedupe via question_hash, save to questions + create year-wise pyq_mock exam.
+// Ingest a PYQ PDF: extract MCQs via Lovable AI in the BACKGROUND.
+// Returns 202 immediately; client polls pyq_uploads.status.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const corsHeaders = {
@@ -25,59 +25,16 @@ interface ExtractedQ {
   difficulty?: 'easy' | 'medium' | 'hard';
 }
 
-async function sha256(text: string): Promise<string> {
-  const data = new TextEncoder().encode(text);
-  const hash = await crypto.subtle.digest('SHA-256', data);
-  return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, '0')).join('');
-}
-
-const normalize = (s: string) => s.toLowerCase().replace(/\s+/g, ' ').trim();
-
-Deno.serve(async (req) => {
-  if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
-
+async function processInBackground(uploadId: string, supabaseUrl: string, serviceKey: string, lovableKey: string) {
+  const admin = createClient(supabaseUrl, serviceKey);
   try {
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
-    const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const lovableKey = Deno.env.get('LOVABLE_API_KEY')!;
-    const authHeader = req.headers.get('authorization');
-    if (!authHeader) return json({ error: 'Unauthorized' }, 401);
-
-    const { upload_id } = await req.json();
-    if (!upload_id) return json({ error: 'upload_id required' }, 400);
-
-    const userClient = createClient(supabaseUrl, supabaseAnonKey, {
-      global: { headers: { Authorization: authHeader } },
-    });
-    const token = authHeader.replace('Bearer ', '');
-    const { data: { user } } = await userClient.auth.getUser(token);
-    if (!user) return json({ error: 'Unauthorized' }, 401);
-
-    const admin = createClient(supabaseUrl, serviceKey);
-
-    // Validate role
-    const { data: roleRow } = await admin.from('user_roles').select('role').eq('user_id', user.id).single();
-    const role = roleRow?.role;
-    if (!['admin', 'super_admin', 'developer'].includes(role)) {
-      return json({ error: 'Forbidden' }, 403);
-    }
-
     const { data: upload, error: upErr } = await admin
-      .from('pyq_uploads')
-      .select('*')
-      .eq('id', upload_id)
-      .single();
-    if (upErr || !upload) return json({ error: 'Upload not found' }, 404);
-
-    await admin.from('pyq_uploads').update({ status: 'processing', error_log: null }).eq('id', upload_id);
+      .from('pyq_uploads').select('*').eq('id', uploadId).single();
+    if (upErr || !upload) throw new Error('Upload not found');
 
     // Fetch the PDF
     const fileResp = await fetch(upload.file_url);
-    if (!fileResp.ok) {
-      await admin.from('pyq_uploads').update({ status: 'failed', error_log: `Cannot fetch PDF: ${fileResp.status}` }).eq('id', upload_id);
-      return json({ error: 'Cannot fetch PDF' }, 400);
-    }
+    if (!fileResp.ok) throw new Error(`Cannot fetch PDF: ${fileResp.status}`);
     const pdfBuffer = await fileResp.arrayBuffer();
     const bytes = new Uint8Array(pdfBuffer);
     let binary = '';
@@ -87,20 +44,14 @@ Deno.serve(async (req) => {
     }
     const pdfBase64 = btoa(binary);
 
-    // Call Lovable AI Gateway with file input (Gemini supports inline PDFs)
+    // Use Gemini Flash for SPEED (5-10x faster than Pro for extraction)
     const aiResp = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
       method: 'POST',
-      headers: {
-        Authorization: `Bearer ${lovableKey}`,
-        'Content-Type': 'application/json',
-      },
+      headers: { Authorization: `Bearer ${lovableKey}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: 'google/gemini-2.5-pro',
+        model: 'google/gemini-2.5-flash',
         messages: [
-          {
-            role: 'system',
-            content: 'You are an expert at extracting MCQ questions from BSEB Class 10 previous year question papers. Return only the structured tool call.',
-          },
+          { role: 'system', content: 'You are an expert at extracting MCQ questions from BSEB Class 10 previous year question papers. Return only the structured tool call.' },
           {
             role: 'user',
             content: [
@@ -146,17 +97,15 @@ Deno.serve(async (req) => {
 
     if (!aiResp.ok) {
       const txt = await aiResp.text();
-      await admin.from('pyq_uploads').update({ status: 'failed', error_log: `AI error ${aiResp.status}: ${txt.slice(0, 500)}` }).eq('id', upload_id);
-      if (aiResp.status === 429) return json({ error: 'AI rate limit, try again shortly' }, 429);
-      if (aiResp.status === 402) return json({ error: 'AI credits exhausted' }, 402);
-      return json({ error: 'AI extraction failed' }, 500);
+      await admin.from('pyq_uploads').update({ status: 'failed', error_log: `AI error ${aiResp.status}: ${txt.slice(0, 500)}` }).eq('id', uploadId);
+      return;
     }
 
     const aiData = await aiResp.json();
     const toolCall = aiData.choices?.[0]?.message?.tool_calls?.[0];
     if (!toolCall) {
-      await admin.from('pyq_uploads').update({ status: 'failed', error_log: 'AI returned no tool call', raw_ai_response: aiData }).eq('id', upload_id);
-      return json({ error: 'AI returned no questions' }, 500);
+      await admin.from('pyq_uploads').update({ status: 'failed', error_log: 'AI returned no tool call' }).eq('id', uploadId);
+      return;
     }
 
     const args = JSON.parse(toolCall.function.arguments);
@@ -165,11 +114,54 @@ Deno.serve(async (req) => {
     await admin.from('pyq_uploads').update({
       questions_extracted: extracted.length,
       extracted_questions: extracted,
-      raw_ai_response: aiData,
       status: 'completed',
-    }).eq('id', upload_id);
+    }).eq('id', uploadId);
+  } catch (e) {
+    console.error('Background processing failed:', e);
+    await admin.from('pyq_uploads').update({
+      status: 'failed',
+      error_log: e instanceof Error ? e.message : 'Unknown error',
+    }).eq('id', uploadId);
+  }
+}
 
-    return json({ success: true, extracted_count: extracted.length, upload_id });
+Deno.serve(async (req) => {
+  if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
+
+  try {
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
+    const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const lovableKey = Deno.env.get('LOVABLE_API_KEY')!;
+    const authHeader = req.headers.get('authorization');
+    if (!authHeader) return json({ error: 'Unauthorized' }, 401);
+
+    const { upload_id } = await req.json();
+    if (!upload_id) return json({ error: 'upload_id required' }, 400);
+
+    const userClient = createClient(supabaseUrl, supabaseAnonKey, {
+      global: { headers: { Authorization: authHeader } },
+    });
+    const token = authHeader.replace('Bearer ', '');
+    const { data: { user } } = await userClient.auth.getUser(token);
+    if (!user) return json({ error: 'Unauthorized' }, 401);
+
+    const admin = createClient(supabaseUrl, serviceKey);
+
+    const { data: roleRow } = await admin.from('user_roles').select('role').eq('user_id', user.id).single();
+    const role = roleRow?.role;
+    if (!['admin', 'super_admin', 'developer', 'teacher'].includes(role)) {
+      return json({ error: 'Forbidden' }, 403);
+    }
+
+    // Mark as processing immediately
+    await admin.from('pyq_uploads').update({ status: 'processing', error_log: null }).eq('id', upload_id);
+
+    // Fire-and-forget background processing
+    // @ts-ignore - EdgeRuntime is available in Supabase Edge Functions
+    EdgeRuntime.waitUntil(processInBackground(upload_id, supabaseUrl, serviceKey, lovableKey));
+
+    return json({ success: true, upload_id, status: 'processing', message: 'Extraction started in background. Poll status.' }, 202);
   } catch (e) {
     console.error(e);
     return json({ error: e instanceof Error ? e.message : 'Unknown error' }, 500);
