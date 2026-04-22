@@ -37,20 +37,32 @@ const BoardPrepPage: React.FC = () => {
         .order('pyq_year', { ascending: false }) as any;
       setMocks(exams || []);
 
-      // Subjects + chapters that have PYQ questions
+      // Subjects + chapters that have PYQ questions (scoped to user's school via RLS)
       const { data: qs } = await supabase
         .from('questions')
         .select('chapter_id')
-        .eq('source', 'pyq') as any;
+        .eq('source', 'pyq')
+        .not('chapter_id', 'is', null) as any;
       const chapterIds = Array.from(new Set((qs || []).map((q: any) => q.chapter_id).filter(Boolean))) as string[];
       if (chapterIds.length) {
-        const { data: chRows } = await supabase.from('chapters').select('id, name, subject_id').in('id', chapterIds) as any;
+        const { data: chRows } = await supabase
+          .from('chapters')
+          .select('id, name, subject_id')
+          .in('id', chapterIds)
+          .order('name') as any;
         setChapters(chRows || []);
         const subjIds = Array.from(new Set((chRows || []).map((c: any) => c.subject_id))) as string[];
         if (subjIds.length) {
-          const { data: sRows } = await supabase.from('subjects').select('id, name').in('id', subjIds) as any;
+          const { data: sRows } = await supabase
+            .from('subjects')
+            .select('id, name')
+            .in('id', subjIds)
+            .order('name') as any;
           setSubjects(sRows || []);
         }
+      } else {
+        setChapters([]);
+        setSubjects([]);
       }
 
       // Revision count

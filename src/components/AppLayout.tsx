@@ -10,6 +10,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
 import NotificationDropdown from '@/components/NotificationDropdown';
 import { useBoardPrepAccess } from '@/hooks/useBoardPrepAccess';
+import { usePageAudit } from '@/hooks/usePageAudit';
 
 const ROLE_MENUS: Record<string, { label: string; icon: React.ElementType; path: string }[]> = {
   developer: [
@@ -71,6 +72,7 @@ const ROLE_MENUS: Record<string, { label: string; icon: React.ElementType; path:
     { label: 'Announcements', icon: Megaphone, path: '/announcements' },
     { label: 'Analytics', icon: BarChart3, path: '/analytics' },
     { label: 'Feedback', icon: Star, path: '/feedback' },
+    { label: 'Audit Logs', icon: Shield, path: '/audit-logs' },
     { label: 'Lesson Planner', icon: NotebookPen, path: '/lesson-planner' },
     { label: 'Print Material', icon: Printer, path: '/study-material-print' },
     { label: 'Settings', icon: Settings, path: '/settings' },
@@ -92,6 +94,7 @@ const ROLE_MENUS: Record<string, { label: string; icon: React.ElementType; path:
     { label: 'My Students', icon: Users, path: '/students' },
     { label: 'Announcements', icon: Megaphone, path: '/announcements' },
     { label: 'Feedback', icon: Star, path: '/feedback' },
+    { label: 'Audit Logs', icon: Shield, path: '/audit-logs' },
     { label: 'Lesson Planner', icon: NotebookPen, path: '/lesson-planner' },
     { label: 'Settings', icon: Settings, path: '/settings' },
     { label: 'My Profile', icon: User, path: '/profile' },
@@ -150,6 +153,7 @@ const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
   const navigate = useNavigate();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  usePageAudit();
 
   const role = user?.role ?? 'student';
   const { enabled: boardPrepEnabled } = useBoardPrepAccess();
