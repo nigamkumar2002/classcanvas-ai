@@ -44,18 +44,33 @@ async function processInBackground(uploadId: string, supabaseUrl: string, servic
     }
     const pdfBase64 = btoa(binary);
 
-    // Use Gemini Flash for SPEED (5-10x faster than Pro for extraction)
+    // Use Gemini 2.5 Pro: BSEB papers have 100 MCQs — Pro reliably extracts all; Flash often truncates around 80.
+    const NCERT_CHAPTERS = `
+BSEB Class 10 NCERT chapters by subject (use the EXACT chapter name from this list):
+- Mathematics: Real Numbers, Polynomials, Pair of Linear Equations in Two Variables, Quadratic Equations, Arithmetic Progressions, Triangles, Coordinate Geometry, Introduction to Trigonometry, Some Applications of Trigonometry, Circles, Areas Related to Circles, Surface Areas and Volumes, Statistics, Probability
+- Science: Chemical Reactions and Equations, Acids Bases and Salts, Metals and Non-metals, Carbon and its Compounds, Life Processes, Control and Coordination, How do Organisms Reproduce, Heredity and Evolution, Light Reflection and Refraction, The Human Eye and the Colourful World, Electricity, Magnetic Effects of Electric Current, Our Environment
+- Social Science: Resources and Development, Forest and Wildlife Resources, Water Resources, Agriculture, Minerals and Energy Resources, Manufacturing Industries, Lifelines of National Economy, The Rise of Nationalism in Europe, Nationalism in India, The Making of a Global World, The Age of Industrialisation, Print Culture and the Modern World, Power Sharing, Federalism, Democracy and Diversity, Gender Religion and Caste, Popular Struggles and Movements, Political Parties, Outcomes of Democracy, Challenges to Democracy, Development, Sectors of the Indian Economy, Money and Credit, Globalisation and the Indian Economy, Consumer Rights
+- Hindi: Hindi Gadya, Hindi Padya, Vyakaran, Lekhan
+- English: Literature Reader, Grammar and Writing, Reading Comprehension
+- Sanskrit: Gadya Bhag, Padya Bhag, Vyakaran
+`;
     const aiResp = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
       method: 'POST',
       headers: { Authorization: `Bearer ${lovableKey}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: 'google/gemini-2.5-flash',
+        model: 'google/gemini-2.5-pro',
         messages: [
-          { role: 'system', content: 'You are an expert at extracting MCQ questions from BSEB Class 10 previous year question papers. Return only the structured tool call.' },
+          { role: 'system', content: 'You are an expert BSEB Class 10 PYQ extractor. BSEB papers contain EXACTLY 100 objective MCQs (each with 4 options A/B/C/D). You MUST extract every single MCQ — do not stop early, do not summarize. Return only the structured tool call with all questions.' },
           {
             role: 'user',
             content: [
-              { type: 'text', text: `Extract ALL multiple-choice questions (4 options each) from this BSEB Class 10 PYQ paper${upload.pyq_year ? ` for year ${upload.pyq_year}` : ''}. For each question, identify subject (Hindi, English, Math, Science, Social Science, Sanskrit) and chapter (NCERT chapter name). Skip non-MCQ questions.` },
+              { type: 'text', text: `Extract ALL 100 multiple-choice questions from this BSEB Class 10 PYQ paper${upload.pyq_year ? ` (year ${upload.pyq_year})` : ''}. Requirements:
+1. Extract EVERY MCQ — the paper has 100. Do not stop at 80 or 50. If a question lacks 4 options, still try to reconstruct.
+2. For each question, set subject_name to one of: Mathematics, Science, Social Science, Hindi, English, Sanskrit.
+3. For chapter_name, choose the BEST MATCH from the list below — use the exact name. Do NOT invent new chapter names if a match exists.
+4. Set difficulty as easy/medium/hard based on complexity.
+
+${NCERT_CHAPTERS}` },
               { type: 'file', file: { filename: upload.file_name, file_data: `data:application/pdf;base64,${pdfBase64}` } },
             ],
           },
