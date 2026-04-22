@@ -79,7 +79,13 @@ Deno.serve(async (req) => {
       return json({ error: 'Cannot fetch PDF' }, 400);
     }
     const pdfBuffer = await fileResp.arrayBuffer();
-    const pdfBase64 = btoa(String.fromCharCode(...new Uint8Array(pdfBuffer)));
+    const bytes = new Uint8Array(pdfBuffer);
+    let binary = '';
+    const CHUNK = 0x8000;
+    for (let i = 0; i < bytes.length; i += CHUNK) {
+      binary += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + CHUNK)));
+    }
+    const pdfBase64 = btoa(binary);
 
     // Call Lovable AI Gateway with file input (Gemini supports inline PDFs)
     const aiResp = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
