@@ -60,7 +60,7 @@ BSEB Class 10 NCERT chapters by subject (use the EXACT chapter name from this li
       body: JSON.stringify({
         model: 'google/gemini-2.5-pro',
         messages: [
-          { role: 'system', content: 'You are an expert BSEB Class 10 PYQ extractor. BSEB papers contain EXACTLY 100 objective MCQs (each with 4 options A/B/C/D). You MUST extract every single MCQ — do not stop early, do not summarize. Return only the structured tool call with all questions.' },
+          { role: 'system', content: 'You are an expert BSEB Class 10 PYQ extractor. BSEB papers contain EXACTLY 100 objective MCQs (each with 4 options A/B/C/D). You MUST extract every single MCQ, verify the final count, and only then return the structured tool call. Do not stop early, do not summarize.' },
           {
             role: 'user',
             content: [
@@ -126,9 +126,16 @@ ${NCERT_CHAPTERS}` },
     const args = JSON.parse(toolCall.function.arguments);
     const extracted: ExtractedQ[] = args.questions || [];
 
+    if (!Array.isArray(extracted) || extracted.length === 0) {
+      throw new Error('No questions extracted from PDF');
+    }
+
     await admin.from('pyq_uploads').update({
       questions_extracted: extracted.length,
       extracted_questions: extracted,
+      error_log: extracted.length < EXPECTED_QUESTION_COUNT
+        ? `Partial extraction: found ${extracted.length} of ${EXPECTED_QUESTION_COUNT} questions`
+        : null,
       status: 'completed',
     }).eq('id', uploadId);
   } catch (e) {
