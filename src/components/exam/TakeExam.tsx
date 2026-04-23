@@ -86,7 +86,7 @@ const TakeExam: React.FC<Props> = ({
               </div>
             </div>
           </div>
-          <div className="hidden md:flex items-center gap-1 rounded-xl border border-border bg-muted/40 p-1">
+          <div className="flex items-center gap-1 rounded-xl border border-border bg-muted/40 p-1">
             {(['both', 'hindi', 'english'] as const).map((mode) => (
               <button
                 key={mode}
