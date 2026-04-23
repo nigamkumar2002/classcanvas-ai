@@ -17,6 +17,24 @@ async function sha256(text: string): Promise<string> {
 }
 const normalize = (s: string) => (s || '').toLowerCase().replace(/\s+/g, ' ').trim();
 
+const parseBilingual = (text: string) => {
+  const value = (text || '').trim();
+  const hindi = /हिंदी:\s*([\s\S]*?)(?:\nEnglish:|$)/i.exec(value)?.[1]?.trim() || '';
+  const english = /English:\s*([\s\S]*)$/i.exec(value)?.[1]?.trim() || '';
+  return { hindi, english };
+};
+
+const inferUploadSubject = (questions: any[]) => {
+  const frequency = new Map<string, number>();
+  for (const question of questions) {
+    const subject = normalize(question.subject_name || '');
+    if (!subject) continue;
+    frequency.set(subject, (frequency.get(subject) || 0) + 1);
+  }
+
+  return [...frequency.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || 'general';
+};
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
 
@@ -54,6 +72,8 @@ Deno.serve(async (req) => {
     const questions = (edited_questions && Array.isArray(edited_questions) ? edited_questions : upload.extracted_questions) as any[];
     if (!questions?.length) return json({ error: 'No questions to save' }, 400);
 
+    const uploadSubjectName = inferUploadSubject(questions);
+
     // Load existing subjects + chapters for this class
     const { data: existingSubjects } = await admin.from('subjects').select('id, name, class_id').eq('class_id', class_id);
     const subjectByName = new Map<string, string>();
@@ -69,7 +89,7 @@ Deno.serve(async (req) => {
     const insertedQuestionIds: string[] = [];
 
     for (const q of questions) {
-      const subjName = (q.subject_name || 'General').trim();
+      const subjName = (q.subject_name || uploadSubjectName || 'General').trim();
       const chapName = (q.chapter_name || 'Unmapped PYQ').trim();
 
       let subjectId = subjectByName.get(normalize(subjName));
@@ -106,12 +126,21 @@ Deno.serve(async (req) => {
 
     // Create or get a year-wise mock exam (100Q, 165min)
     const year = upload.pyq_year || new Date().getFullYear();
-    const examTitle = `BSEB Class 10 PYQ ${year} – Full Mock`;
+    const subjectDisplayName = [...subjectByName.entries()].find(([key]) => key === normalize(uploadSubjectName))?.[0] || uploadSubjectName;
+    const prettySubjectName = questions[0]?.subject_name || subjectDisplayName || 'General';
+    const examTitle = `BSEB Class 10 ${prettySubjectName} PYQ ${year} – Full Mock`;
     // Use first subject/chapter as host (exam.chapter_id is required)
     const firstChapterId = (questions.find(q => (q as any).__chapter_id) as any)?.__chapter_id;
     if (!firstChapterId) return json({ error: 'No valid chapter mapping' }, 400);
 
-    const { data: existingExam } = await admin.from('exams').select('id').eq('school_id', upload.school_id).eq('exam_kind', 'pyq_mock').eq('pyq_year', year).maybeSingle();
+    const { data: existingExam } = await admin
+      .from('exams')
+      .select('id, chapter_id')
+      .eq('school_id', upload.school_id)
+      .eq('exam_kind', 'pyq_mock')
+      .eq('pyq_year', year)
+      .eq('title', examTitle)
+      .maybeSingle();
 
     let examId = existingExam?.id;
     if (!examId) {
@@ -142,8 +171,20 @@ Deno.serve(async (req) => {
       if (!cid || !hash) { skipped++; continue; }
 
       // Check duplicate
-      const { data: dup } = await admin.from('questions').select('id').eq('school_id', upload.school_id).eq('chapter_id', cid).eq('question_hash', hash).maybeSingle();
+      const { data: dup } = await admin
+        .from('questions')
+        .select('id')
+        .eq('school_id', upload.school_id)
+        .eq('chapter_id', cid)
+        .eq('question_hash', hash)
+        .maybeSingle();
       if (dup) { skipped++; continue; }
+
+      const bilingualQuestion = parseBilingual(q.question_text || '');
+      const bilingualA = parseBilingual(q.option_a || '');
+      const bilingualB = parseBilingual(q.option_b || '');
+      const bilingualC = parseBilingual(q.option_c || '');
+      const bilingualD = parseBilingual(q.option_d || '');
 
       const { data: newQ, error: qErr } = await admin.from('questions').insert({
         exam_id: examId,
@@ -161,6 +202,15 @@ Deno.serve(async (req) => {
         difficulty: q.difficulty || 'medium',
         question_hash: hash,
         source: 'pyq',
+        tags: [
+          `subject:${normalize(subjName)}`,
+          `chapter:${normalize(chapName)}`,
+          'lang:hi-en',
+          ...(bilingualQuestion.hindi ? ['question:hi'] : []),
+          ...(bilingualQuestion.english ? ['question:en'] : []),
+          ...(bilingualA.hindi && bilingualB.hindi && bilingualC.hindi && bilingualD.hindi ? ['options:hi'] : []),
+          ...(bilingualA.english && bilingualB.english && bilingualC.english && bilingualD.english ? ['options:en'] : []),
+        ],
       }).select('id').single();
       if (qErr) { skipped++; continue; }
       inserted++;
@@ -171,6 +221,7 @@ Deno.serve(async (req) => {
       status: 'approved',
       questions_inserted: inserted,
       questions_skipped: skipped,
+      subject_id: subjectByName.get(normalize(prettySubjectName)) || null,
     }).eq('id', upload_id);
 
     return json({ success: true, inserted, skipped, exam_id: examId });
