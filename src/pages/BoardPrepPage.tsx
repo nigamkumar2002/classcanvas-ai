@@ -6,7 +6,17 @@ import { GraduationCap, Trophy, BookOpen, Brain, Target, Calendar, Loader2, Uplo
 import { toast } from 'sonner';
 import { useBoardPrepAccess } from '@/hooks/useBoardPrepAccess';
 
-interface MockExam { id: string; title: string; pyq_year: number | null; total_marks: number; duration_minutes: number; }
+interface MockExam {
+  id: string;
+  title: string;
+  pyq_year: number | null;
+  total_marks: number;
+  duration_minutes: number;
+  created_at: string;
+  subject_name: string;
+  chapter_name: string;
+  question_count: number;
+}
 interface ChapterRow { id: string; name: string; subject_id: string; }
 interface SubjectRow { id: string; name: string; }
 
@@ -28,14 +38,45 @@ const BoardPrepPage: React.FC = () => {
     if (!user || accessLoading) return;
     if (!enabled) { setLoading(false); return; }
     (async () => {
-      // Year-wise mock exams (board_prep)
+      // Year-wise full mock exams with subject/chapter labels and duplicate cleanup
       const { data: exams } = await supabase
         .from('exams')
-        .select('id, title, pyq_year, total_marks, duration_minutes')
+        .select('id, title, pyq_year, total_marks, duration_minutes, created_at, chapter:chapters(name, subject:subjects(name))')
         .eq('is_board_prep', true)
         .eq('exam_kind', 'pyq_mock')
-        .order('pyq_year', { ascending: false }) as any;
-      setMocks(exams || []);
+        .order('created_at', { ascending: false }) as any;
+
+      const examIds = (exams || []).map((exam: any) => exam.id);
+      const counts = new Map<string, number>();
+      if (examIds.length) {
+        const { data: questionRows } = await supabase.from('questions').select('exam_id').in('exam_id', examIds) as any;
+        (questionRows || []).forEach((row: any) => counts.set(row.exam_id, (counts.get(row.exam_id) || 0) + 1));
+      }
+
+      const deduped = new Map<string, MockExam>();
+      (exams || []).forEach((exam: any) => {
+        const mock: MockExam = {
+          id: exam.id,
+          title: exam.title,
+          pyq_year: exam.pyq_year,
+          total_marks: exam.total_marks,
+          duration_minutes: exam.duration_minutes,
+          created_at: exam.created_at,
+          subject_name: exam.chapter?.subject?.name || 'Subject pending',
+          chapter_name: exam.chapter?.name || 'Chapter pending',
+          question_count: counts.get(exam.id) || 0,
+        };
+
+        if (mock.question_count === 0) return;
+        const key = `${mock.title}::${mock.pyq_year}::${mock.subject_name}`;
+        const existing = deduped.get(key);
+
+        if (!existing || mock.question_count > existing.question_count || (mock.question_count === existing.question_count && mock.created_at > existing.created_at)) {
+          deduped.set(key, mock);
+        }
+      });
+
+      setMocks(Array.from(deduped.values()).sort((a, b) => (b.pyq_year || 0) - (a.pyq_year || 0) || b.question_count - a.question_count));
 
       // Subjects + chapters that have PYQ questions (scoped to user's school via RLS)
       const { data: qs } = await supabase
@@ -144,8 +185,9 @@ const BoardPrepPage: React.FC = () => {
               <button key={m.id} onClick={() => navigate(`/exams?take=${m.id}`)}
                 className="text-left p-5 rounded-2xl bg-card border hover:border-primary hover:shadow-lg transition-all">
                 <div className="flex items-center gap-2 text-amber-600 font-bold mb-1"><Calendar className="w-4 h-4" /> Year {m.pyq_year || 'N/A'}</div>
+                <p className="text-xs font-medium text-primary mb-1">{m.subject_name}</p>
                 <h3 className="font-bold">{m.title}</h3>
-                <p className="text-xs text-muted-foreground mt-1">{m.total_marks} marks · {m.duration_minutes} min</p>
+                <p className="text-xs text-muted-foreground mt-1">{m.total_marks} marks · {m.duration_minutes} min · {m.question_count} questions</p>
               </button>
             ))}
           </div>
@@ -167,7 +209,8 @@ const BoardPrepPage: React.FC = () => {
                     <button key={c.id} disabled={generating !== null}
                       onClick={() => generateTest('chapter', { chapter_id: c.id })}
                       className="text-left text-sm p-3 rounded-lg bg-muted/40 hover:bg-primary/10 hover:text-primary transition-all disabled:opacity-50">
-                      {c.name}
+                      <span className="block font-medium">{c.name}</span>
+                      <span className="text-xs text-muted-foreground">{s.name}</span>
                     </button>
                   ))}
                 </div>
