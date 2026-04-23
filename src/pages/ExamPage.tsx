@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
@@ -26,6 +27,7 @@ export interface QuestionData {
 
 const ExamPage = () => {
   const { user } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [exams, setExams] = useState<ExamData[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -65,6 +67,20 @@ const ExamPage = () => {
   }, [user, isStudent]);
 
   useEffect(() => { fetchExams(); }, [fetchExams]);
+
+  useEffect(() => {
+    const takeExamId = searchParams.get('take');
+    if (!takeExamId || loading || !exams.length || activeExam) return;
+
+    const exam = exams.find((entry) => entry.id === takeExamId);
+    if (!exam) return;
+
+    startExam(exam).finally(() => {
+      const next = new URLSearchParams(searchParams);
+      next.delete('take');
+      setSearchParams(next, { replace: true });
+    });
+  }, [searchParams, loading, exams, activeExam]);
 
   const isExamAccessible = (exam: ExamData): { accessible: boolean; reason: string } => {
     if (!isStudent) return { accessible: true, reason: '' };

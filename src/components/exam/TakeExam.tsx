@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Timer, Flag, ChevronLeft, ChevronRight, Send } from 'lucide-react';
 import type { ExamData, QuestionData } from '@/pages/ExamPage';
 
@@ -19,9 +19,33 @@ const TakeExam: React.FC<Props> = ({
   exam, questions, answers, setAnswers, flagged, setFlagged,
   currentIdx, setCurrentIdx, timeLeft, onSubmit,
 }) => {
+  const [languageMode, setLanguageMode] = useState<'both' | 'hindi' | 'english'>('both');
   const q = questions[currentIdx];
   const formatTime = (secs: number) => `${Math.floor(secs / 60).toString().padStart(2, '0')}:${(secs % 60).toString().padStart(2, '0')}`;
   const opts = ['A', 'B', 'C', 'D'] as const;
+
+  const parseBilingualText = (value: string) => {
+    const raw = value?.trim() || '';
+    const hindi = /हिंदी:\s*([\s\S]*?)(?:\nEnglish:|$)/i.exec(raw)?.[1]?.trim() || '';
+    const english = /English:\s*([\s\S]*)$/i.exec(raw)?.[1]?.trim() || '';
+    return { raw, hindi, english };
+  };
+
+  const renderLocalizedText = (value: string, mutedEnglish = false) => {
+    const { raw, hindi, english } = parseBilingualText(value);
+
+    if (!hindi && !english) return <span>{raw}</span>;
+    if (languageMode === 'hindi') return <span>{hindi || raw || english}</span>;
+    if (languageMode === 'english') return <span>{english || raw || hindi}</span>;
+
+    return (
+      <span className="space-y-1">
+        <span className="block">{hindi || raw}</span>
+        {english && <span className={mutedEnglish ? 'block text-muted-foreground' : 'block'}>{english}</span>}
+      </span>
+    );
+  };
+
   const optLabels: Record<string, string> = { A: q.option_a, B: q.option_b, C: q.option_c, D: q.option_d };
 
   const toggleFlag = () => {
@@ -62,6 +86,17 @@ const TakeExam: React.FC<Props> = ({
               </div>
             </div>
           </div>
+          <div className="flex items-center gap-1 rounded-xl border border-border bg-muted/40 p-1">
+            {(['both', 'hindi', 'english'] as const).map((mode) => (
+              <button
+                key={mode}
+                onClick={() => setLanguageMode(mode)}
+                className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${languageMode === mode ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'}`}
+              >
+                {mode === 'both' ? 'Both' : mode === 'hindi' ? 'Hindi' : 'English'}
+              </button>
+            ))}
+          </div>
           <div className={`flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-base ${isUrgent ? 'bg-red-100 text-red-600 animate-pulse' : 'bg-muted text-foreground'}`}>
             <Timer className="w-4 h-4" /> {formatTime(timeLeft)}
           </div>
@@ -83,7 +118,7 @@ const TakeExam: React.FC<Props> = ({
           <div className="mb-6">
             <p className="text-base font-medium leading-relaxed">
               <span className="text-primary font-bold mr-1">{currentIdx + 1}.</span>
-              {q.question_text}
+              {renderLocalizedText(q.question_text, true)}
             </p>
           </div>
 
@@ -99,7 +134,7 @@ const TakeExam: React.FC<Props> = ({
                 <span className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0 ${
                   answers[q.id] === opt ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'
                 }`}>{opt}</span>
-                <span className="text-sm">{optLabels[opt]}</span>
+                <span className="text-sm">{renderLocalizedText(optLabels[opt], true)}</span>
               </button>
             ))}
           </div>

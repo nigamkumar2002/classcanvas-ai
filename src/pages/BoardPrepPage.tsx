@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
-import { GraduationCap, Trophy, BookOpen, Brain, Target, Calendar, Loader2, Upload, Settings as SettingsIcon } from 'lucide-react';
+import { GraduationCap, Trophy, BookOpen, Brain, Target, Calendar, Loader2, Upload, Settings as SettingsIcon, Languages, ChevronRight } from 'lucide-react';
 import { toast } from 'sonner';
 import { useBoardPrepAccess } from '@/hooks/useBoardPrepAccess';
 
@@ -20,6 +20,13 @@ interface MockExam {
 interface ChapterRow { id: string; name: string; subject_id: string; }
 interface SubjectRow { id: string; name: string; }
 
+interface SectionCard {
+  key: 'full' | 'chapter' | 'revision';
+  title: string;
+  subtitle: string;
+  countLabel: string;
+}
+
 const BoardPrepPage: React.FC = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -31,6 +38,7 @@ const BoardPrepPage: React.FC = () => {
   const [revisionCount, setRevisionCount] = useState(0);
   const [generating, setGenerating] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [activeSection, setActiveSection] = useState<'full' | 'chapter' | 'revision'>('full');
 
   const isStaff = user && ['developer', 'super_admin', 'admin'].includes(user.role);
 
@@ -150,6 +158,11 @@ const BoardPrepPage: React.FC = () => {
   }
 
   const subjectChapters = (sid: string) => chapters.filter(c => c.subject_id === sid);
+  const sectionCards: SectionCard[] = [
+    { key: 'full', title: 'Full Mock Tests', subtitle: 'Approved year-wise subject mocks', countLabel: `${mocks.length} ready` },
+    { key: 'chapter', title: 'Chapter Mock Tests', subtitle: 'Subject-wise chapter practice', countLabel: `${chapters.length} chapters` },
+    { key: 'revision', title: 'Revision Tests', subtitle: 'Focused student revision sets', countLabel: `${revisionCount} revision items` },
+  ];
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
@@ -159,7 +172,7 @@ const BoardPrepPage: React.FC = () => {
           <div>
             <div className="flex items-center gap-2 text-white/80 text-sm mb-1"><GraduationCap className="w-4 h-4" /> BSEB Class 10</div>
             <h1 className="text-3xl font-bold">Board Preparation</h1>
-            <p className="text-white/90 mt-1">100-question mock tests, chapter-wise practice, and smart revision.</p>
+              <p className="text-white/90 mt-1">100-question approved mocks, subject-wise chapter practice, and bilingual Hindi/English exams.</p>
           </div>
           {isStaff && (
             <div className="flex gap-2">
@@ -174,8 +187,32 @@ const BoardPrepPage: React.FC = () => {
         </div>
       </div>
 
+      <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {sectionCards.map((card) => {
+          const isActive = activeSection === card.key;
+          return (
+            <button
+              key={card.key}
+              onClick={() => setActiveSection(card.key)}
+              className={`text-left rounded-2xl border p-5 transition-all ${isActive ? 'border-primary bg-primary/5 shadow-lg' : 'border-border bg-card hover:border-primary/40'}`}
+            >
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-sm font-semibold">{card.title}</p>
+                  <p className="mt-1 text-sm text-muted-foreground">{card.subtitle}</p>
+                </div>
+                <span className="rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground">{card.countLabel}</span>
+              </div>
+              <div className="mt-4 flex items-center gap-2 text-sm font-medium text-primary">
+                Open <ChevronRight className="h-4 w-4" />
+              </div>
+            </button>
+          );
+        })}
+      </section>
+
       {/* Year-wise Full Mocks */}
-      <section>
+      <section className={activeSection === 'full' ? 'block' : 'hidden'}>
         <h2 className="text-xl font-bold mb-3 flex items-center gap-2"><Trophy className="w-5 h-5 text-amber-500" /> Full Mock Tests (Year-wise)</h2>
         {mocks.length === 0 ? (
           <p className="text-muted-foreground bg-muted/40 p-6 rounded-xl text-center">No PYQ mock tests yet. {isStaff && 'Upload a PYQ PDF to begin.'}</p>
@@ -187,7 +224,16 @@ const BoardPrepPage: React.FC = () => {
                 <div className="flex items-center gap-2 text-amber-600 font-bold mb-1"><Calendar className="w-4 h-4" /> Year {m.pyq_year || 'N/A'}</div>
                 <p className="text-xs font-medium text-primary mb-1">{m.subject_name}</p>
                 <h3 className="font-bold">{m.title}</h3>
-                <p className="text-xs text-muted-foreground mt-1">{m.total_marks} marks · {m.duration_minutes} min · {m.question_count} questions</p>
+                <p className="text-xs text-muted-foreground mt-1">{m.chapter_name}</p>
+                <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                  <span>{m.total_marks} marks</span>
+                  <span>·</span>
+                  <span>{m.duration_minutes} min</span>
+                  <span>·</span>
+                  <span>{m.question_count} questions</span>
+                  <span>·</span>
+                  <span className="inline-flex items-center gap-1"><Languages className="h-3.5 w-3.5" /> Hindi + English</span>
+                </div>
               </button>
             ))}
           </div>
@@ -195,7 +241,7 @@ const BoardPrepPage: React.FC = () => {
       </section>
 
       {/* Chapter Practice */}
-      <section>
+      <section className={activeSection === 'chapter' ? 'block' : 'hidden'}>
         <h2 className="text-xl font-bold mb-3 flex items-center gap-2"><BookOpen className="w-5 h-5 text-blue-500" /> Chapter Practice (Combined Years)</h2>
         {subjects.length === 0 ? (
           <p className="text-muted-foreground bg-muted/40 p-6 rounded-xl text-center">No chapters with PYQs yet.</p>
@@ -221,12 +267,12 @@ const BoardPrepPage: React.FC = () => {
       </section>
 
       {/* Mixed + Revision */}
-      <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <section className={activeSection === 'revision' ? 'grid grid-cols-1 md:grid-cols-2 gap-4' : 'hidden'}>
         <button onClick={() => generateTest('mixed')} disabled={generating !== null}
           className="p-6 rounded-2xl bg-gradient-to-br from-cyan-500 to-blue-600 text-white text-left hover:shadow-xl transition-all disabled:opacity-50">
           <Target className="w-8 h-8 mb-2" />
-          <h3 className="font-bold text-lg">Mixed Practice</h3>
-          <p className="text-sm text-white/90 mt-1">20 random PYQs across all years and chapters.</p>
+          <h3 className="font-bold text-lg">Full Revision Mock</h3>
+          <p className="text-sm text-white/90 mt-1">Approved mixed PYQs with subject-balanced revision practice.</p>
         </button>
         {user?.role === 'student' && (
           <button onClick={() => generateTest('revision')} disabled={generating !== null || revisionCount === 0}

@@ -1,5 +1,5 @@
 // Generate an on-demand board prep test (chapter practice, mixed, or revision).
-// Creates a new exam row with selected question IDs cloned in via a host exam approach.
+// Creates a student-facing board prep exam with clear subject/chapter metadata.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const corsHeaders = {
@@ -29,6 +29,18 @@ Deno.serve(async (req) => {
     const { data: profile } = await admin.from('profiles').select('school_id, class_id').eq('user_id', user.id).single();
     if (!profile?.school_id) return json({ error: 'No school' }, 400);
 
+    const resolveSubjectName = async (chapterId?: string | null, subjectId?: string | null) => {
+      if (subjectId) {
+        const { data } = await admin.from('subjects').select('name').eq('id', subjectId).maybeSingle();
+        if (data?.name) return data.name;
+      }
+      if (chapterId) {
+        const { data } = await admin.from('chapters').select('name, subject:subjects(name)').eq('id', chapterId).maybeSingle();
+        return { chapterName: data?.name || null, subjectName: (data as any)?.subject?.name || null };
+      }
+      return { chapterName: null, subjectName: null };
+    };
+
     // Pull source questions
     let sourceQs: any[] = [];
     if (mode === 'revision') {
@@ -40,6 +52,12 @@ Deno.serve(async (req) => {
     } else {
       let q = admin.from('questions').select('*').eq('school_id', profile.school_id).eq('source', 'pyq');
       if (chapter_id) q = q.eq('chapter_id', chapter_id);
+      if (subject_id && !chapter_id) {
+        const { data: subjectChapters } = await admin.from('chapters').select('id').eq('subject_id', subject_id);
+        const subjectChapterIds = (subjectChapters || []).map((chapter) => chapter.id);
+        if (!subjectChapterIds.length) return json({ error: 'No chapters available for that subject' }, 400);
+        q = q.in('chapter_id', subjectChapterIds);
+      }
       if (pyq_year) q = q.eq('pyq_year', pyq_year);
       const { data: pool } = await q.limit(500);
       const shuffled = (pool || []).sort(() => Math.random() - 0.5).slice(0, num_questions);
@@ -51,15 +69,29 @@ Deno.serve(async (req) => {
     const hostChapterId = sourceQs[0].chapter_id;
     const totalMarks = sourceQs.reduce((s, q) => s + (q.marks || 1), 0);
 
-    const titleMap: Record<string, string> = {
-      chapter: 'Chapter Practice',
-      mixed: 'Mixed PYQ Practice',
-      revision: 'Smart Revision Test',
-    };
+    const meta = await resolveSubjectName(hostChapterId, subject_id);
+    const chapterName = typeof meta === 'string' ? null : meta.chapterName;
+    const subjectName = typeof meta === 'string' ? meta : meta.subjectName;
+
+    let title = 'Board Prep Test';
+    let description = 'Auto-generated board prep practice';
+
+    if (mode === 'chapter') {
+      title = `${subjectName || 'Subject'} • ${chapterName || 'Chapter'} Mock Test`;
+      description = `Chapter-wise PYQ practice for ${subjectName || 'the selected subject'}${chapterName ? ` - ${chapterName}` : ''}.`;
+    } else if (mode === 'mixed') {
+      title = `${subjectName || 'All Subjects'} • Revision Mock Test`;
+      description = subjectName
+        ? `Mixed PYQ practice across ${subjectName}.`
+        : 'Mixed PYQ practice across approved board prep questions.';
+    } else if (mode === 'revision') {
+      title = `${subjectName || 'Personal'} • Smart Revision Test`;
+      description = 'Adaptive revision set created from the student revision queue.';
+    }
 
     const { data: newExam, error: eErr } = await admin.from('exams').insert({
-      title: `${titleMap[mode]} – ${new Date().toLocaleDateString()}`,
-      description: 'Auto-generated board prep practice',
+      title,
+      description,
       chapter_id: hostChapterId,
       school_id: profile.school_id,
       created_by: user.id,
