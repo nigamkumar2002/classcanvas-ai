@@ -1535,6 +1535,7 @@ export type Database = {
           created_at: string
           error_log: string | null
           extracted_questions: Json | null
+          extraction_meta: Json
           file_name: string
           file_url: string
           id: string
@@ -1548,11 +1549,14 @@ export type Database = {
           subject_id: string | null
           updated_at: string
           uploaded_by: string
+          written_extracted: number
+          written_inserted: number
         }
         Insert: {
           created_at?: string
           error_log?: string | null
           extracted_questions?: Json | null
+          extraction_meta?: Json
           file_name: string
           file_url: string
           id?: string
@@ -1566,11 +1570,14 @@ export type Database = {
           subject_id?: string | null
           updated_at?: string
           uploaded_by: string
+          written_extracted?: number
+          written_inserted?: number
         }
         Update: {
           created_at?: string
           error_log?: string | null
           extracted_questions?: Json | null
+          extraction_meta?: Json
           file_name?: string
           file_url?: string
           id?: string
@@ -1584,6 +1591,8 @@ export type Database = {
           subject_id?: string | null
           updated_at?: string
           uploaded_by?: string
+          written_extracted?: number
+          written_inserted?: number
         }
         Relationships: []
       }
@@ -1949,6 +1958,66 @@ export type Database = {
           id?: string
           role?: Database["public"]["Enums"]["app_role"]
           user_id?: string
+        }
+        Relationships: []
+      }
+      written_questions: {
+        Row: {
+          chapter_id: string
+          created_at: string
+          created_by: string | null
+          difficulty: string | null
+          id: string
+          marks: number
+          order_index: number
+          pyq_year: number | null
+          question_hash: string | null
+          question_text: string
+          question_type: string
+          school_id: string
+          source: string
+          subject_id: string | null
+          tags: string[] | null
+          updated_at: string
+          upload_id: string | null
+        }
+        Insert: {
+          chapter_id: string
+          created_at?: string
+          created_by?: string | null
+          difficulty?: string | null
+          id?: string
+          marks?: number
+          order_index?: number
+          pyq_year?: number | null
+          question_hash?: string | null
+          question_text: string
+          question_type?: string
+          school_id: string
+          source?: string
+          subject_id?: string | null
+          tags?: string[] | null
+          updated_at?: string
+          upload_id?: string | null
+        }
+        Update: {
+          chapter_id?: string
+          created_at?: string
+          created_by?: string | null
+          difficulty?: string | null
+          id?: string
+          marks?: number
+          order_index?: number
+          pyq_year?: number | null
+          question_hash?: string | null
+          question_text?: string
+          question_type?: string
+          school_id?: string
+          source?: string
+          subject_id?: string | null
+          tags?: string[] | null
+          updated_at?: string
+          upload_id?: string | null
         }
         Relationships: []
       }
