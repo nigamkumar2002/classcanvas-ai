@@ -14,12 +14,16 @@ interface UploadRow {
   questions_extracted: number;
   questions_inserted: number;
   questions_skipped: number;
+  written_extracted?: number;
+  written_inserted?: number;
   error_log: string | null;
   extracted_questions: any[];
+  extraction_meta?: any;
   created_at: string;
 }
 
-const getUploadSubject = (upload: UploadRow) => upload.extracted_questions?.[0]?.subject_name || 'Subject pending';
+const getUploadSubject = (upload: UploadRow) =>
+  upload.extraction_meta?.detected_subject || upload.extracted_questions?.[0]?.subject_name || 'Subject pending';
 
 const BoardPrepUploadPage: React.FC = () => {
   const { user } = useAuth();
