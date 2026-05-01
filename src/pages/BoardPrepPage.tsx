@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
-import { GraduationCap, Trophy, BookOpen, Brain, Target, Calendar, Loader2, Upload, Settings as SettingsIcon, Languages, ChevronRight } from 'lucide-react';
+import { GraduationCap, Trophy, BookOpen, Brain, Target, Calendar, Loader2, Upload, Settings as SettingsIcon, Languages, ChevronRight, Pencil } from 'lucide-react';
 import { toast } from 'sonner';
 import { useBoardPrepAccess } from '@/hooks/useBoardPrepAccess';
 
