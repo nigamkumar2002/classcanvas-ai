@@ -212,8 +212,15 @@ const BoardPrepUploadPage: React.FC = () => {
               <h3 className="font-bold text-lg">Review: {reviewing.file_name}</h3>
               <button onClick={() => setReviewing(null)} className="text-muted-foreground">✕</button>
             </div>
-            <p className="text-sm text-muted-foreground">{reviewing.extracted_questions?.length || 0} questions extracted. Saving will dedupe and create a {reviewing.pyq_year} mock exam.</p>
+            <p className="text-sm text-muted-foreground">
+              MCQs: {reviewing.extracted_questions?.length || 0} extracted
+              {(reviewing.written_extracted ?? 0) > 0 && (
+                <> · Written: {reviewing.written_extracted} extracted</>
+              )}
+              {' '}· Saving will dedupe, create the {reviewing.pyq_year} mock exam, and add written questions to chapters.
+            </p>
             <div className="space-y-2 max-h-96 overflow-y-auto">
+              <p className="text-xs font-bold uppercase text-muted-foreground sticky top-0 bg-card pb-1">MCQs</p>
               {(reviewing.extracted_questions || []).slice(0, 20).map((q: any, i: number) => (
                 <div key={i} className="p-3 border rounded-lg text-sm">
                   <p className="font-medium">{i + 1}. {q.question_text}</p>
@@ -221,7 +228,25 @@ const BoardPrepUploadPage: React.FC = () => {
                   <p className="text-xs mt-1"><span className="font-bold text-green-600">Answer: {q.correct_answer}</span> · {q.subject_name} → {q.chapter_name}</p>
                 </div>
               ))}
-              {(reviewing.extracted_questions?.length || 0) > 20 && <p className="text-xs text-center text-muted-foreground">… and {reviewing.extracted_questions.length - 20} more</p>}
+              {(reviewing.extracted_questions?.length || 0) > 20 && <p className="text-xs text-center text-muted-foreground">… and {reviewing.extracted_questions.length - 20} more MCQs</p>}
+
+              {(reviewing.extraction_meta?.written_questions?.length || 0) > 0 && (
+                <>
+                  <p className="text-xs font-bold uppercase text-muted-foreground sticky top-0 bg-card pb-1 pt-3">Written / Subjective</p>
+                  {(reviewing.extraction_meta.written_questions || []).slice(0, 15).map((w: any, i: number) => (
+                    <div key={`w-${i}`} className="p-3 border rounded-lg text-sm bg-amber-50/40">
+                      <p className="font-medium">{i + 1}. {w.question_text}</p>
+                      <p className="text-xs mt-1">
+                        <span className="font-bold text-amber-700">{w.marks} mark{w.marks !== 1 ? 's' : ''}</span>
+                        {' '}· {w.question_type?.replace('_', ' ')} · {w.subject_name} → {w.chapter_name}
+                      </p>
+                    </div>
+                  ))}
+                  {(reviewing.extraction_meta.written_questions.length || 0) > 15 && (
+                    <p className="text-xs text-center text-muted-foreground">… and {reviewing.extraction_meta.written_questions.length - 15} more written questions</p>
+                  )}
+                </>
+              )}
             </div>
             <div className="flex gap-2 justify-end pt-2 border-t">
               <select value={classId} onChange={e => setClassId(e.target.value)} className="border rounded-lg p-2 text-sm">
