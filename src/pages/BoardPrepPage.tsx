@@ -280,12 +280,21 @@ const BoardPrepPage: React.FC = () => {
                 <summary className="font-semibold cursor-pointer">{s.name} <span className="text-xs text-muted-foreground">({subjectChapters(s.id).length} chapters)</span></summary>
                 <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
                   {subjectChapters(s.id).map(c => (
-                    <button key={c.id} disabled={generating !== null}
-                      onClick={() => generateTest('chapter', { chapter_id: c.id })}
-                      className="text-left text-sm p-3 rounded-lg bg-muted/40 hover:bg-primary/10 hover:text-primary transition-all disabled:opacity-50">
-                      <span className="block font-medium">{c.name}</span>
-                      <span className="text-xs text-muted-foreground">{s.name}</span>
-                    </button>
+                    <div key={c.id} className="relative">
+                      <button disabled={generating !== null}
+                        onClick={() => generateTest('chapter', { chapter_id: c.id })}
+                        className="w-full text-left text-sm p-3 rounded-lg bg-muted/40 hover:bg-primary/10 hover:text-primary transition-all disabled:opacity-50">
+                        <span className="block font-medium pr-6">{c.name}</span>
+                        <span className="text-xs text-muted-foreground">{s.name}</span>
+                      </button>
+                      {canRename && (
+                        <button onClick={(e) => { e.stopPropagation(); renameChapter(c); }}
+                          className="absolute top-2 right-2 p-1 rounded-md bg-background/80 hover:bg-primary hover:text-primary-foreground transition-colors"
+                          title="Rename chapter">
+                          <Pencil className="w-3 h-3" />
+                        </button>
+                      )}
+                    </div>
                   ))}
                 </div>
               </details>
