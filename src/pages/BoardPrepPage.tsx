@@ -41,6 +41,25 @@ const BoardPrepPage: React.FC = () => {
   const [activeSection, setActiveSection] = useState<'full' | 'chapter' | 'revision'>('full');
 
   const isStaff = user && ['developer', 'super_admin', 'admin'].includes(user.role);
+  const canRename = user && ['developer', 'super_admin', 'admin'].includes(user.role);
+
+  const renameExam = async (mock: MockExam) => {
+    const next = window.prompt('Rename mock test:', mock.title);
+    if (!next || next.trim() === '' || next.trim() === mock.title) return;
+    const { error } = await supabase.from('exams').update({ title: next.trim() }).eq('id', mock.id);
+    if (error) { toast.error(error.message); return; }
+    setMocks(prev => prev.map(m => m.id === mock.id ? { ...m, title: next.trim() } : m));
+    toast.success('Renamed');
+  };
+
+  const renameChapter = async (chapter: ChapterRow) => {
+    const next = window.prompt('Rename chapter:', chapter.name);
+    if (!next || next.trim() === '' || next.trim() === chapter.name) return;
+    const { error } = await supabase.from('chapters').update({ name: next.trim() }).eq('id', chapter.id);
+    if (error) { toast.error(error.message); return; }
+    setChapters(prev => prev.map(c => c.id === chapter.id ? { ...c, name: next.trim() } : c));
+    toast.success('Renamed');
+  };
 
   useEffect(() => {
     if (!user || accessLoading) return;
