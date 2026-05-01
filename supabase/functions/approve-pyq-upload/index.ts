@@ -1,5 +1,7 @@
-// Approve & save extracted PYQ questions: dedupe, auto-create chapters,
-// insert questions, and create a year-wise pyq_mock exam (100Q, 165min).
+// Approve & save extracted PYQ questions:
+// - Dedupe + auto-create subjects/chapters
+// - Insert MCQs into a yearly mock exam (duration scales to extracted MCQ count)
+// - Insert written/subjective questions into the new written_questions library (chapter-scoped)
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const corsHeaders = {
@@ -24,15 +26,14 @@ const parseBilingual = (text: string) => {
   return { hindi, english };
 };
 
-const inferUploadSubject = (questions: any[]) => {
-  const frequency = new Map<string, number>();
-  for (const question of questions) {
-    const subject = normalize(question.subject_name || '');
-    if (!subject) continue;
-    frequency.set(subject, (frequency.get(subject) || 0) + 1);
+const inferSubject = (items: any[]) => {
+  const f = new Map<string, number>();
+  for (const it of items) {
+    const s = normalize(it.subject_name || '');
+    if (!s) continue;
+    f.set(s, (f.get(s) || 0) + 1);
   }
-
-  return [...frequency.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || 'general';
+  return [...f.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || 'general';
 };
 
 Deno.serve(async (req) => {
@@ -48,183 +49,223 @@ Deno.serve(async (req) => {
     const { upload_id, class_id, edited_questions } = await req.json();
     if (!upload_id || !class_id) return json({ error: 'upload_id and class_id required' }, 400);
 
-    const userClient = createClient(supabaseUrl, supabaseAnonKey, {
-      global: { headers: { Authorization: authHeader } },
-    });
+    const userClient = createClient(supabaseUrl, supabaseAnonKey, { global: { headers: { Authorization: authHeader } } });
     const { data: { user } } = await userClient.auth.getUser(authHeader.replace('Bearer ', ''));
     if (!user) return json({ error: 'Unauthorized' }, 401);
 
     const admin = createClient(supabaseUrl, serviceKey);
     const { data: roleRow } = await admin.from('user_roles').select('role').eq('user_id', user.id).single();
-    if (!['admin', 'super_admin', 'developer'].includes(roleRow?.role)) {
-      return json({ error: 'Forbidden' }, 403);
-    }
+    if (!['admin', 'super_admin', 'developer'].includes(roleRow?.role)) return json({ error: 'Forbidden' }, 403);
 
     const { data: upload } = await admin.from('pyq_uploads').select('*').eq('id', upload_id).single();
     if (!upload) return json({ error: 'Upload not found' }, 404);
 
-    // Verify class is grade 10
     const { data: cls } = await admin.from('classes').select('id, name, grade_level, school_id').eq('id', class_id).single();
     if (!cls) return json({ error: 'Class not found' }, 404);
     if (cls.grade_level !== 10) return json({ error: 'Board Prep only allowed for Class 10' }, 400);
     if (cls.school_id !== upload.school_id) return json({ error: 'Class/upload school mismatch' }, 400);
 
-    const questions = (edited_questions && Array.isArray(edited_questions) ? edited_questions : upload.extracted_questions) as any[];
-    if (!questions?.length) return json({ error: 'No questions to save' }, 400);
+    const mcqs = (edited_questions && Array.isArray(edited_questions) ? edited_questions : upload.extracted_questions) as any[];
+    const written = (upload.extraction_meta?.written_questions || []) as any[];
 
-    const uploadSubjectName = inferUploadSubject(questions);
+    if ((!mcqs || mcqs.length === 0) && (!written || written.length === 0)) {
+      return json({ error: 'No questions to save' }, 400);
+    }
 
-    // Load existing subjects + chapters for this class
+    const uploadSubjectName = inferSubject([...(mcqs || []), ...(written || [])]);
+    const year = upload.pyq_year || new Date().getFullYear();
+
+    // Preload subjects + chapters
     const { data: existingSubjects } = await admin.from('subjects').select('id, name, class_id').eq('class_id', class_id);
     const subjectByName = new Map<string, string>();
-    (existingSubjects || []).forEach(s => subjectByName.set(normalize(s.name), s.id));
+    (existingSubjects || []).forEach((s: any) => subjectByName.set(normalize(s.name), s.id));
 
-    const { data: existingChapters } = await admin.from('chapters').select('id, name, subject_id').in('subject_id', (existingSubjects || []).map(s => s.id).concat('00000000-0000-0000-0000-000000000000'));
+    const subjectIds = (existingSubjects || []).map((s: any) => s.id);
+    const { data: existingChapters } = subjectIds.length > 0
+      ? await admin.from('chapters').select('id, name, subject_id').in('subject_id', subjectIds)
+      : { data: [] as any[] };
     const chapterKey = (sid: string, name: string) => `${sid}::${normalize(name)}`;
     const chapterByKey = new Map<string, string>();
-    (existingChapters || []).forEach(c => chapterByKey.set(chapterKey(c.subject_id, c.name), c.id));
+    (existingChapters || []).forEach((c: any) => chapterByKey.set(chapterKey(c.subject_id, c.name), c.id));
 
-    // Auto-create missing subjects/chapters
-    let inserted = 0, skipped = 0;
-    const insertedQuestionIds: string[] = [];
-
-    for (const q of questions) {
-      const subjName = (q.subject_name || uploadSubjectName || 'General').trim();
-      const chapName = (q.chapter_name || 'Unmapped PYQ').trim();
+    // Helper to resolve subject + chapter (creating if needed)
+    const resolveChapter = async (rawSubject: string | undefined, rawChapter: string | undefined) => {
+      const subjName = (rawSubject || uploadSubjectName || 'General').trim();
+      const chapName = (rawChapter || 'Unmapped PYQ').trim();
 
       let subjectId = subjectByName.get(normalize(subjName));
       if (!subjectId) {
-        const { data: newSubj, error: sErr } = await admin.from('subjects').insert({
+        const { data: newSubj } = await admin.from('subjects').insert({
           name: subjName, class_id, school_id: upload.school_id,
         }).select('id').single();
-        if (sErr || !newSubj) { skipped++; continue; }
+        if (!newSubj) return null;
         subjectId = newSubj.id;
         subjectByName.set(normalize(subjName), subjectId);
       }
 
       let chapterId = chapterByKey.get(chapterKey(subjectId, chapName));
       if (!chapterId) {
-        const { data: newChap, error: cErr } = await admin.from('chapters').insert({
+        const { data: newChap } = await admin.from('chapters').insert({
           name: chapName, subject_id: subjectId, school_id: upload.school_id,
         }).select('id').single();
-        if (cErr || !newChap) { skipped++; continue; }
+        if (!newChap) return null;
         chapterId = newChap.id;
         chapterByKey.set(chapterKey(subjectId, chapName), chapterId);
       }
+      return { subjectId, chapterId, subjName, chapName };
+    };
 
-      const hashSrc = normalize(q.question_text) + '|' + [q.option_a, q.option_b, q.option_c, q.option_d].map(normalize).sort().join('|');
-      const qHash = await sha256(hashSrc);
+    // ---------------- MCQs ----------------
+    let mcqInserted = 0;
+    let mcqSkipped = 0;
+    let examId: string | null = null;
 
-      // We need a host exam_id later. For now insert into a holding exam or directly into questions linked to chapter.
-      // Strategy: create one mock exam per year first (below) then insert questions linked to it.
-      // But questions table requires exam_id. So we create the mock exam first, batched below.
-      // Defer: collect all valid items, create exam, insert.
-      (q as any).__chapter_id = chapterId;
-      (q as any).__subject_id = subjectId;
-      (q as any).__hash = qHash;
+    if (mcqs && mcqs.length > 0) {
+      // Resolve all chapters first
+      const prepared: Array<any> = [];
+      for (const q of mcqs) {
+        const r = await resolveChapter(q.subject_name, q.chapter_name);
+        if (!r) { mcqSkipped++; continue; }
+        const hashSrc = normalize(q.question_text) + '|' + [q.option_a, q.option_b, q.option_c, q.option_d].map(normalize).sort().join('|');
+        const hash = await sha256(hashSrc);
+        prepared.push({ q, ...r, hash });
+      }
+
+      const firstChapterId = prepared[0]?.chapterId;
+      if (!firstChapterId) return json({ error: 'No valid chapter mapping for MCQs' }, 400);
+
+      const prettySubject = mcqs[0]?.subject_name || uploadSubjectName || 'General';
+      const examTitle = `BSEB Class 10 ${prettySubject} PYQ ${year} – Full Mock`;
+      const totalMarks = prepared.length;
+      // Duration: ~1.5 min per MCQ, min 30 min, max 180 min
+      const durationMinutes = Math.max(30, Math.min(180, Math.round(totalMarks * 1.5)));
+
+      const { data: existingExam } = await admin.from('exams')
+        .select('id').eq('school_id', upload.school_id).eq('exam_kind', 'pyq_mock')
+        .eq('pyq_year', year).eq('title', examTitle).maybeSingle();
+
+      if (existingExam) {
+        examId = existingExam.id;
+        // Update marks/duration to match latest extraction
+        await admin.from('exams').update({
+          total_marks: totalMarks, duration_minutes: durationMinutes,
+        }).eq('id', examId);
+      } else {
+        const { data: newExam, error: eErr } = await admin.from('exams').insert({
+          title: examTitle,
+          description: `Auto-generated from ${upload.file_name}`,
+          chapter_id: firstChapterId,
+          school_id: upload.school_id,
+          created_by: user.id,
+          duration_minutes: durationMinutes,
+          total_marks: totalMarks,
+          pass_marks: Math.max(1, Math.round(totalMarks * 0.33)),
+          is_active: true,
+          publish_status: 'published',
+          exam_kind: 'pyq_mock',
+          pyq_year: year,
+          is_board_prep: true,
+        }).select('id').single();
+        if (eErr || !newExam) return json({ error: 'Failed to create mock exam: ' + eErr?.message }, 500);
+        examId = newExam.id;
+      }
+
+      let order = 0;
+      for (const p of prepared) {
+        const { data: dup } = await admin.from('questions')
+          .select('id').eq('school_id', upload.school_id)
+          .eq('chapter_id', p.chapterId).eq('question_hash', p.hash).maybeSingle();
+        if (dup) { mcqSkipped++; continue; }
+
+        const bQ = parseBilingual(p.q.question_text || '');
+        const bA = parseBilingual(p.q.option_a || '');
+        const bB = parseBilingual(p.q.option_b || '');
+        const bC = parseBilingual(p.q.option_c || '');
+        const bD = parseBilingual(p.q.option_d || '');
+
+        const { error: qErr } = await admin.from('questions').insert({
+          exam_id: examId,
+          school_id: upload.school_id,
+          chapter_id: p.chapterId,
+          question_text: p.q.question_text,
+          option_a: p.q.option_a, option_b: p.q.option_b, option_c: p.q.option_c, option_d: p.q.option_d,
+          correct_answer: p.q.correct_answer,
+          marks: 1,
+          order_index: order++,
+          pyq_year: year,
+          difficulty: p.q.difficulty || 'medium',
+          question_hash: p.hash,
+          source: 'pyq',
+          tags: [
+            `subject:${normalize(p.subjName)}`,
+            `chapter:${normalize(p.chapName)}`,
+            'lang:hi-en',
+            ...(bQ.hindi ? ['question:hi'] : []),
+            ...(bQ.english ? ['question:en'] : []),
+            ...(bA.hindi && bB.hindi && bC.hindi && bD.hindi ? ['options:hi'] : []),
+            ...(bA.english && bB.english && bC.english && bD.english ? ['options:en'] : []),
+          ],
+        });
+        if (qErr) { mcqSkipped++; continue; }
+        mcqInserted++;
+      }
     }
 
-    // Create or get a year-wise mock exam (100Q, 165min)
-    const year = upload.pyq_year || new Date().getFullYear();
-    const subjectDisplayName = [...subjectByName.entries()].find(([key]) => key === normalize(uploadSubjectName))?.[0] || uploadSubjectName;
-    const prettySubjectName = questions[0]?.subject_name || subjectDisplayName || 'General';
-    const examTitle = `BSEB Class 10 ${prettySubjectName} PYQ ${year} – Full Mock`;
-    // Use first subject/chapter as host (exam.chapter_id is required)
-    const firstChapterId = (questions.find(q => (q as any).__chapter_id) as any)?.__chapter_id;
-    if (!firstChapterId) return json({ error: 'No valid chapter mapping' }, 400);
+    // ---------------- Written / Subjective ----------------
+    let writtenInserted = 0;
+    let writtenSkipped = 0;
 
-    const { data: existingExam } = await admin
-      .from('exams')
-      .select('id, chapter_id')
-      .eq('school_id', upload.school_id)
-      .eq('exam_kind', 'pyq_mock')
-      .eq('pyq_year', year)
-      .eq('title', examTitle)
-      .maybeSingle();
+    if (written && written.length > 0) {
+      let order = 0;
+      for (const w of written) {
+        const r = await resolveChapter(w.subject_name, w.chapter_name);
+        if (!r) { writtenSkipped++; continue; }
+        const hashSrc = normalize(w.question_text);
+        const hash = await sha256(hashSrc);
 
-    let examId = existingExam?.id;
-    if (!examId) {
-      const { data: newExam, error: eErr } = await admin.from('exams').insert({
-        title: examTitle,
-        description: `Auto-generated from ${upload.file_name}`,
-        chapter_id: firstChapterId,
-        school_id: upload.school_id,
-        created_by: user.id,
-        duration_minutes: 165,
-        total_marks: 100,
-        pass_marks: 33,
-        is_active: true,
-        publish_status: 'published',
-        exam_kind: 'pyq_mock',
-        pyq_year: year,
-        is_board_prep: true,
-      }).select('id').single();
-      if (eErr || !newExam) return json({ error: 'Failed to create mock exam: ' + eErr?.message }, 500);
-      examId = newExam.id;
-    }
+        // dedupe via unique index (school, chapter, hash)
+        const { data: dup } = await admin.from('written_questions')
+          .select('id').eq('school_id', upload.school_id)
+          .eq('chapter_id', r.chapterId).eq('question_hash', hash).maybeSingle();
+        if (dup) { writtenSkipped++; continue; }
 
-    // Insert questions with dedupe
-    let order = 0;
-    for (const q of questions) {
-      const cid = (q as any).__chapter_id;
-      const hash = (q as any).__hash;
-      if (!cid || !hash) { skipped++; continue; }
-
-      // Check duplicate
-      const { data: dup } = await admin
-        .from('questions')
-        .select('id')
-        .eq('school_id', upload.school_id)
-        .eq('chapter_id', cid)
-        .eq('question_hash', hash)
-        .maybeSingle();
-      if (dup) { skipped++; continue; }
-
-      const bilingualQuestion = parseBilingual(q.question_text || '');
-      const bilingualA = parseBilingual(q.option_a || '');
-      const bilingualB = parseBilingual(q.option_b || '');
-      const bilingualC = parseBilingual(q.option_c || '');
-      const bilingualD = parseBilingual(q.option_d || '');
-
-      const { data: newQ, error: qErr } = await admin.from('questions').insert({
-        exam_id: examId,
-        school_id: upload.school_id,
-        chapter_id: cid,
-        question_text: q.question_text,
-        option_a: q.option_a,
-        option_b: q.option_b,
-        option_c: q.option_c,
-        option_d: q.option_d,
-        correct_answer: q.correct_answer,
-        marks: 1,
-        order_index: order++,
-        pyq_year: year,
-        difficulty: q.difficulty || 'medium',
-        question_hash: hash,
-        source: 'pyq',
-        tags: [
-          `subject:${normalize(subjName)}`,
-          `chapter:${normalize(chapName)}`,
-          'lang:hi-en',
-          ...(bilingualQuestion.hindi ? ['question:hi'] : []),
-          ...(bilingualQuestion.english ? ['question:en'] : []),
-          ...(bilingualA.hindi && bilingualB.hindi && bilingualC.hindi && bilingualD.hindi ? ['options:hi'] : []),
-          ...(bilingualA.english && bilingualB.english && bilingualC.english && bilingualD.english ? ['options:en'] : []),
-        ],
-      }).select('id').single();
-      if (qErr) { skipped++; continue; }
-      inserted++;
-      if (newQ) insertedQuestionIds.push(newQ.id);
+        const { error: wErr } = await admin.from('written_questions').insert({
+          school_id: upload.school_id,
+          chapter_id: r.chapterId,
+          subject_id: r.subjectId,
+          upload_id: upload.id,
+          question_text: w.question_text,
+          marks: w.marks || 2,
+          pyq_year: year,
+          question_type: w.question_type || 'short_answer',
+          difficulty: w.difficulty || 'medium',
+          source: 'pyq',
+          question_hash: hash,
+          tags: [`subject:${normalize(r.subjName)}`, `chapter:${normalize(r.chapName)}`, 'lang:hi-en'],
+          order_index: order++,
+          created_by: user.id,
+        });
+        if (wErr) { writtenSkipped++; continue; }
+        writtenInserted++;
+      }
     }
 
     await admin.from('pyq_uploads').update({
       status: 'approved',
-      questions_inserted: inserted,
-      questions_skipped: skipped,
-      subject_id: subjectByName.get(normalize(prettySubjectName)) || null,
+      questions_inserted: mcqInserted,
+      questions_skipped: mcqSkipped,
+      written_inserted: writtenInserted,
+      subject_id: subjectByName.get(normalize(uploadSubjectName)) || null,
     }).eq('id', upload_id);
 
-    return json({ success: true, inserted, skipped, exam_id: examId });
+    return json({
+      success: true,
+      inserted: mcqInserted,
+      skipped: mcqSkipped,
+      written_inserted: writtenInserted,
+      written_skipped: writtenSkipped,
+      exam_id: examId,
+    });
   } catch (e) {
     console.error(e);
     return json({ error: e instanceof Error ? e.message : 'Unknown error' }, 500);

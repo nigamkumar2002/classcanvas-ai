@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
-import { GraduationCap, Trophy, BookOpen, Brain, Target, Calendar, Loader2, Upload, Settings as SettingsIcon, Languages, ChevronRight } from 'lucide-react';
+import { GraduationCap, Trophy, BookOpen, Brain, Target, Calendar, Loader2, Upload, Settings as SettingsIcon, Languages, ChevronRight, Pencil } from 'lucide-react';
 import { toast } from 'sonner';
 import { useBoardPrepAccess } from '@/hooks/useBoardPrepAccess';
 
@@ -41,6 +41,25 @@ const BoardPrepPage: React.FC = () => {
   const [activeSection, setActiveSection] = useState<'full' | 'chapter' | 'revision'>('full');
 
   const isStaff = user && ['developer', 'super_admin', 'admin'].includes(user.role);
+  const canRename = user && ['developer', 'super_admin', 'admin'].includes(user.role);
+
+  const renameExam = async (mock: MockExam) => {
+    const next = window.prompt('Rename mock test:', mock.title);
+    if (!next || next.trim() === '' || next.trim() === mock.title) return;
+    const { error } = await supabase.from('exams').update({ title: next.trim() }).eq('id', mock.id);
+    if (error) { toast.error(error.message); return; }
+    setMocks(prev => prev.map(m => m.id === mock.id ? { ...m, title: next.trim() } : m));
+    toast.success('Renamed');
+  };
+
+  const renameChapter = async (chapter: ChapterRow) => {
+    const next = window.prompt('Rename chapter:', chapter.name);
+    if (!next || next.trim() === '' || next.trim() === chapter.name) return;
+    const { error } = await supabase.from('chapters').update({ name: next.trim() }).eq('id', chapter.id);
+    if (error) { toast.error(error.message); return; }
+    setChapters(prev => prev.map(c => c.id === chapter.id ? { ...c, name: next.trim() } : c));
+    toast.success('Renamed');
+  };
 
   useEffect(() => {
     if (!user || accessLoading) return;
@@ -219,22 +238,31 @@ const BoardPrepPage: React.FC = () => {
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {mocks.map(m => (
-              <button key={m.id} onClick={() => navigate(`/exams?take=${m.id}`)}
-                className="text-left p-5 rounded-2xl bg-card border hover:border-primary hover:shadow-lg transition-all">
-                <div className="flex items-center gap-2 text-amber-600 font-bold mb-1"><Calendar className="w-4 h-4" /> Year {m.pyq_year || 'N/A'}</div>
-                <p className="text-xs font-medium text-primary mb-1">{m.subject_name}</p>
-                <h3 className="font-bold">{m.title}</h3>
-                <p className="text-xs text-muted-foreground mt-1">{m.chapter_name}</p>
-                <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                  <span>{m.total_marks} marks</span>
-                  <span>·</span>
-                  <span>{m.duration_minutes} min</span>
-                  <span>·</span>
-                  <span>{m.question_count} questions</span>
-                  <span>·</span>
-                  <span className="inline-flex items-center gap-1"><Languages className="h-3.5 w-3.5" /> Hindi + English</span>
-                </div>
-              </button>
+              <div key={m.id} className="relative">
+                <button onClick={() => navigate(`/exams?take=${m.id}`)}
+                  className="w-full text-left p-5 rounded-2xl bg-card border hover:border-primary hover:shadow-lg transition-all">
+                  <div className="flex items-center gap-2 text-amber-600 font-bold mb-1"><Calendar className="w-4 h-4" /> Year {m.pyq_year || 'N/A'}</div>
+                  <p className="text-xs font-medium text-primary mb-1">{m.subject_name}</p>
+                  <h3 className="font-bold pr-7">{m.title}</h3>
+                  <p className="text-xs text-muted-foreground mt-1">{m.chapter_name}</p>
+                  <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                    <span>{m.total_marks} marks</span>
+                    <span>·</span>
+                    <span>{m.duration_minutes} min</span>
+                    <span>·</span>
+                    <span>{m.question_count} questions</span>
+                    <span>·</span>
+                    <span className="inline-flex items-center gap-1"><Languages className="h-3.5 w-3.5" /> Hindi + English</span>
+                  </div>
+                </button>
+                {canRename && (
+                  <button onClick={(e) => { e.stopPropagation(); renameExam(m); }}
+                    className="absolute top-3 right-3 p-1.5 rounded-lg bg-muted hover:bg-primary hover:text-primary-foreground transition-colors"
+                    title="Rename test">
+                    <Pencil className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
             ))}
           </div>
         )}
@@ -252,12 +280,21 @@ const BoardPrepPage: React.FC = () => {
                 <summary className="font-semibold cursor-pointer">{s.name} <span className="text-xs text-muted-foreground">({subjectChapters(s.id).length} chapters)</span></summary>
                 <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
                   {subjectChapters(s.id).map(c => (
-                    <button key={c.id} disabled={generating !== null}
-                      onClick={() => generateTest('chapter', { chapter_id: c.id })}
-                      className="text-left text-sm p-3 rounded-lg bg-muted/40 hover:bg-primary/10 hover:text-primary transition-all disabled:opacity-50">
-                      <span className="block font-medium">{c.name}</span>
-                      <span className="text-xs text-muted-foreground">{s.name}</span>
-                    </button>
+                    <div key={c.id} className="relative">
+                      <button disabled={generating !== null}
+                        onClick={() => generateTest('chapter', { chapter_id: c.id })}
+                        className="w-full text-left text-sm p-3 rounded-lg bg-muted/40 hover:bg-primary/10 hover:text-primary transition-all disabled:opacity-50">
+                        <span className="block font-medium pr-6">{c.name}</span>
+                        <span className="text-xs text-muted-foreground">{s.name}</span>
+                      </button>
+                      {canRename && (
+                        <button onClick={(e) => { e.stopPropagation(); renameChapter(c); }}
+                          className="absolute top-2 right-2 p-1 rounded-md bg-background/80 hover:bg-primary hover:text-primary-foreground transition-colors"
+                          title="Rename chapter">
+                          <Pencil className="w-3 h-3" />
+                        </button>
+                      )}
+                    </div>
                   ))}
                 </div>
               </details>

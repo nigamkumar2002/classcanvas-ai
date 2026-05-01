@@ -14,12 +14,16 @@ interface UploadRow {
   questions_extracted: number;
   questions_inserted: number;
   questions_skipped: number;
+  written_extracted?: number;
+  written_inserted?: number;
   error_log: string | null;
   extracted_questions: any[];
+  extraction_meta?: any;
   created_at: string;
 }
 
-const getUploadSubject = (upload: UploadRow) => upload.extracted_questions?.[0]?.subject_name || 'Subject pending';
+const getUploadSubject = (upload: UploadRow) =>
+  upload.extraction_meta?.detected_subject || upload.extracted_questions?.[0]?.subject_name || 'Subject pending';
 
 const BoardPrepUploadPage: React.FC = () => {
   const { user } = useAuth();
@@ -154,7 +158,14 @@ const BoardPrepUploadPage: React.FC = () => {
                   <FileText className="w-5 h-5 text-muted-foreground flex-shrink-0" />
                   <div className="min-w-0">
                     <p className="font-medium truncate">{u.file_name}</p>
-                     <p className="text-xs text-muted-foreground">{getUploadSubject(u)} · Year {u.pyq_year} · {u.questions_extracted} extracted · {u.questions_inserted} saved · {u.questions_skipped} dupes</p>
+                    <p className="text-xs text-muted-foreground">
+                      {getUploadSubject(u)} · Year {u.pyq_year}
+                      {' · '}MCQ: {u.questions_extracted} extracted / {u.questions_inserted} saved
+                      {(u.written_extracted ?? 0) > 0 && (
+                        <> · Written: {u.written_extracted} extracted / {u.written_inserted ?? 0} saved</>
+                      )}
+                      {' · '}{u.questions_skipped} dupes
+                    </p>
                   </div>
                 </div>
                 <div className="flex items-center gap-2 flex-wrap">
@@ -201,8 +212,15 @@ const BoardPrepUploadPage: React.FC = () => {
               <h3 className="font-bold text-lg">Review: {reviewing.file_name}</h3>
               <button onClick={() => setReviewing(null)} className="text-muted-foreground">✕</button>
             </div>
-            <p className="text-sm text-muted-foreground">{reviewing.extracted_questions?.length || 0} questions extracted. Saving will dedupe and create a {reviewing.pyq_year} mock exam.</p>
+            <p className="text-sm text-muted-foreground">
+              MCQs: {reviewing.extracted_questions?.length || 0} extracted
+              {(reviewing.written_extracted ?? 0) > 0 && (
+                <> · Written: {reviewing.written_extracted} extracted</>
+              )}
+              {' '}· Saving will dedupe, create the {reviewing.pyq_year} mock exam, and add written questions to chapters.
+            </p>
             <div className="space-y-2 max-h-96 overflow-y-auto">
+              <p className="text-xs font-bold uppercase text-muted-foreground sticky top-0 bg-card pb-1">MCQs</p>
               {(reviewing.extracted_questions || []).slice(0, 20).map((q: any, i: number) => (
                 <div key={i} className="p-3 border rounded-lg text-sm">
                   <p className="font-medium">{i + 1}. {q.question_text}</p>
@@ -210,7 +228,25 @@ const BoardPrepUploadPage: React.FC = () => {
                   <p className="text-xs mt-1"><span className="font-bold text-green-600">Answer: {q.correct_answer}</span> · {q.subject_name} → {q.chapter_name}</p>
                 </div>
               ))}
-              {(reviewing.extracted_questions?.length || 0) > 20 && <p className="text-xs text-center text-muted-foreground">… and {reviewing.extracted_questions.length - 20} more</p>}
+              {(reviewing.extracted_questions?.length || 0) > 20 && <p className="text-xs text-center text-muted-foreground">… and {reviewing.extracted_questions.length - 20} more MCQs</p>}
+
+              {(reviewing.extraction_meta?.written_questions?.length || 0) > 0 && (
+                <>
+                  <p className="text-xs font-bold uppercase text-muted-foreground sticky top-0 bg-card pb-1 pt-3">Written / Subjective</p>
+                  {(reviewing.extraction_meta.written_questions || []).slice(0, 15).map((w: any, i: number) => (
+                    <div key={`w-${i}`} className="p-3 border rounded-lg text-sm bg-amber-50/40">
+                      <p className="font-medium">{i + 1}. {w.question_text}</p>
+                      <p className="text-xs mt-1">
+                        <span className="font-bold text-amber-700">{w.marks} mark{w.marks !== 1 ? 's' : ''}</span>
+                        {' '}· {w.question_type?.replace('_', ' ')} · {w.subject_name} → {w.chapter_name}
+                      </p>
+                    </div>
+                  ))}
+                  {(reviewing.extraction_meta.written_questions.length || 0) > 15 && (
+                    <p className="text-xs text-center text-muted-foreground">… and {reviewing.extraction_meta.written_questions.length - 15} more written questions</p>
+                  )}
+                </>
+              )}
             </div>
             <div className="flex gap-2 justify-end pt-2 border-t">
               <select value={classId} onChange={e => setClassId(e.target.value)} className="border rounded-lg p-2 text-sm">

@@ -19,7 +19,7 @@ const TakeExam: React.FC<Props> = ({
   exam, questions, answers, setAnswers, flagged, setFlagged,
   currentIdx, setCurrentIdx, timeLeft, onSubmit,
 }) => {
-  const [languageMode, setLanguageMode] = useState<'both' | 'hindi' | 'english'>('both');
+  const [languageMode, setLanguageMode] = useState<'both' | 'hindi' | 'english'>('hindi');
   const q = questions[currentIdx];
   const formatTime = (secs: number) => `${Math.floor(secs / 60).toString().padStart(2, '0')}:${(secs % 60).toString().padStart(2, '0')}`;
   const opts = ['A', 'B', 'C', 'D'] as const;
