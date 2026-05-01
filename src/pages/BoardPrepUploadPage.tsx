@@ -158,7 +158,14 @@ const BoardPrepUploadPage: React.FC = () => {
                   <FileText className="w-5 h-5 text-muted-foreground flex-shrink-0" />
                   <div className="min-w-0">
                     <p className="font-medium truncate">{u.file_name}</p>
-                     <p className="text-xs text-muted-foreground">{getUploadSubject(u)} · Year {u.pyq_year} · {u.questions_extracted} extracted · {u.questions_inserted} saved · {u.questions_skipped} dupes</p>
+                    <p className="text-xs text-muted-foreground">
+                      {getUploadSubject(u)} · Year {u.pyq_year}
+                      {' · '}MCQ: {u.questions_extracted} extracted / {u.questions_inserted} saved
+                      {(u.written_extracted ?? 0) > 0 && (
+                        <> · Written: {u.written_extracted} extracted / {u.written_inserted ?? 0} saved</>
+                      )}
+                      {' · '}{u.questions_skipped} dupes
+                    </p>
                   </div>
                 </div>
                 <div className="flex items-center gap-2 flex-wrap">
