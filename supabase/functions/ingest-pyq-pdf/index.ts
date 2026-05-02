@@ -340,7 +340,18 @@ async function processInBackground(uploadId: string, supabaseUrl: string, servic
     if (!fileResp.ok) throw new Error(`Cannot fetch PDF: ${fileResp.status}`);
 
     const pdfBase64 = encodeBase64(new Uint8Array(await fileResp.arrayBuffer()));
-    const result = await extractAll(upload.file_name, upload.pyq_year, pdfBase64, lovableKey);
+    const progress = async (message: string, mcqCount: number, writtenCount: number) => {
+      await admin.from('pyq_uploads').update({
+        questions_extracted: mcqCount,
+        written_extracted: writtenCount,
+        extraction_meta: {
+          ...(upload.extraction_meta || {}),
+          progress_message: message,
+          progress_at: new Date().toISOString(),
+        },
+      }).eq('id', uploadId);
+    };
+    const result = await extractAll(upload.file_name, upload.pyq_year, pdfBase64, lovableKey, progress);
 
     // Strip number from MCQs (legacy column shape)
     const mcqsOut = result.mcqs.map(({ question_number, ...rest }) => rest);
@@ -352,6 +363,7 @@ async function processInBackground(uploadId: string, supabaseUrl: string, servic
       written_total: result.subjectiveCount,
       mcq_extracted: mcqsOut.length,
       written_extracted: writtenOut.length,
+      warnings: result.warnings,
       finished_at: new Date().toISOString(),
     };
 
