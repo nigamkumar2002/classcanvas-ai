@@ -296,20 +296,22 @@ async function extractAll(fileName: string, pyqYear: number | null, pdfBase64: s
   let objectiveCount = 0;
   let subjectiveCount = 0;
 
-  for (const [start, end] of [[1, 20], [21, 40], [41, 60], [61, 80], [81, 100]]) {
+  await onProgress?.('Extracting MCQs in fast batches…', 0, 0);
+  const ranges = [[1, 20], [21, 40], [41, 60], [61, 80], [81, 100]];
+  const mcqResults = await Promise.all(ranges.map(async ([start, end]) => {
     try {
-      await onProgress?.(`Extracting MCQs ${start}-${end}…`, mcqMap.size, writtenMap.size);
-      const batch = await callMcqBatch(lovableKey, fileName, pdfBase64, pyqYear, start, end);
-      detectedSubject = batch.fallbackSubject || detectedSubject;
-      objectiveCount = Math.max(objectiveCount, batch.objectiveCount);
-      for (const q of batch.mcqs) mcqMap.set(q.question_number, { ...q, subject_name: q.subject_name || detectedSubject });
-      await onProgress?.(`Extracted ${mcqMap.size} MCQs so far…`, mcqMap.size, writtenMap.size);
+      return { start, end, batch: await callMcqBatch(lovableKey, fileName, pdfBase64, pyqYear, start, end), error: null as string | null };
     } catch (e) {
-      const message = `MCQ ${start}-${end} failed: ${e instanceof Error ? e.message : 'Unknown error'}`;
-      warnings.push(message);
-      console.warn(message);
+      return { start, end, batch: null, error: `MCQ ${start}-${end} failed: ${e instanceof Error ? e.message : 'Unknown error'}` };
     }
+  }));
+  for (const r of mcqResults) {
+    if (r.error || !r.batch) { warnings.push(r.error || 'MCQ batch failed'); continue; }
+    detectedSubject = r.batch.fallbackSubject || detectedSubject;
+    objectiveCount = Math.max(objectiveCount, r.batch.objectiveCount);
+    for (const q of r.batch.mcqs) mcqMap.set(q.question_number, { ...q, subject_name: q.subject_name || detectedSubject });
   }
+  await onProgress?.(`Extracted ${mcqMap.size} MCQs. Checking written questions…`, mcqMap.size, 0);
 
   try {
     await onProgress?.('Extracting written questions…', mcqMap.size, writtenMap.size);
