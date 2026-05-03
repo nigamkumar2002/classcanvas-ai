@@ -41,6 +41,7 @@ const UsersPage = () => {
   const [editUser, setEditUser] = useState<Profile | null>(null);
   const [editForm, setEditForm] = useState({ full_name: '', email: '', role: '', class_id: '' });
   const [editLoading, setEditLoading] = useState(false);
+  const [editClasses, setEditClasses] = useState<{id: string; name: string}[]>([]);
 
   // Drill-down: clicking a role card filters to that role
   const [drillRole, setDrillRole] = useState<string | null>(null);
@@ -168,16 +169,30 @@ const UsersPage = () => {
     }
   };
 
+  // Load classes for edit modal whenever a student is selected for editing
+  useEffect(() => {
+    if (!editUser || editForm.role !== 'student') { setEditClasses([]); return; }
+    const schoolId = editUser.school_id;
+    if (!schoolId) { setEditClasses([]); return; }
+    supabase.from('classes').select('id, name').eq('school_id', schoolId).order('name')
+      .then(({ data }) => setEditClasses(data || []));
+  }, [editUser, editForm.role]);
+
   const handleEditUser = async () => {
-    if (!editUser || !editForm.full_name.trim()) return;
+    if (!editUser || !editForm.full_name.trim() || !editForm.email.trim()) return;
+    if (editForm.role === 'student' && !editForm.class_id) {
+      toast.error('Please assign a class for this student');
+      return;
+    }
     setEditLoading(true);
     try {
       const { data, error } = await supabase.functions.invoke('update-user', {
         body: {
           target_user_id: editUser.user_id,
           full_name: editForm.full_name.trim(),
+          email: editForm.email.trim(),
           role: editForm.role,
-          class_id: editForm.class_id || null,
+          class_id: editForm.role === 'student' ? editForm.class_id : null,
         },
       });
       if (error) throw error;
@@ -552,17 +567,28 @@ const UsersPage = () => {
                   className="w-full px-4 py-2.5 rounded-xl border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 text-sm" />
               </div>
               <div>
-                <label className="text-sm font-semibold mb-1.5 block">Email</label>
-                <input value={editForm.email} disabled
-                  className="w-full px-4 py-2.5 rounded-xl border border-border bg-muted text-muted-foreground text-sm" />
+                <label className="text-sm font-semibold mb-1.5 block">Email *</label>
+                <input type="email" value={editForm.email} onChange={e => setEditForm(f => ({ ...f, email: e.target.value }))}
+                  className="w-full px-4 py-2.5 rounded-xl border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 text-sm" />
               </div>
               <div>
                 <label className="text-sm font-semibold mb-1.5 block">Role</label>
                 <select value={editForm.role} onChange={e => setEditForm(f => ({ ...f, role: e.target.value }))}
                   className="w-full px-4 py-2.5 rounded-xl border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 text-sm">
-                  {showRoles.map(r => <option key={r} value={r}>{ROLE_CONFIG[r]?.label || r}</option>)}
+                  {showRoles.filter(r => r !== 'developer').map(r => <option key={r} value={r}>{ROLE_CONFIG[r]?.label || r}</option>)}
                 </select>
               </div>
+              {editForm.role === 'student' && (
+                <div>
+                  <label className="text-sm font-semibold mb-1.5 block flex items-center gap-1"><GraduationCap className="w-3.5 h-3.5" /> Assigned Class *</label>
+                  <select value={editForm.class_id} onChange={e => setEditForm(f => ({ ...f, class_id: e.target.value }))}
+                    className="w-full px-4 py-2.5 rounded-xl border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 text-sm">
+                    <option value="">Select class...</option>
+                    {editClasses.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                  <p className="text-xs text-muted-foreground mt-1">Changing the class will move the student instantly.</p>
+                </div>
+              )}
             </div>
             <div className="flex gap-3 p-6 border-t border-border">
               <button onClick={() => setEditUser(null)} className="flex-1 py-2.5 rounded-xl border border-border font-medium text-sm hover:bg-muted">Cancel</button>

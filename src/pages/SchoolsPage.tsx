@@ -1,7 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
-import { School, BookOpen, Users, GraduationCap, FileText, Plus, X, Trash2, AlertTriangle } from 'lucide-react';
+import { School, BookOpen, Users, GraduationCap, FileText, Plus, X, Trash2, AlertTriangle, Download, Upload, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface SchoolItem {
@@ -22,6 +22,10 @@ const SchoolsPage = () => {
   const [deleteConfirm, setDeleteConfirm] = useState<SchoolItem | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteTyped, setDeleteTyped] = useState('');
+  const [exportingId, setExportingId] = useState<string | null>(null);
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState<any>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   const isDeveloper = user?.role === 'developer';
 
@@ -94,6 +98,49 @@ const SchoolsPage = () => {
     }
   };
 
+  const handleExport = async (school: SchoolItem) => {
+    setExportingId(school.id);
+    const t = toast.loading(`Exporting ${school.name}…`);
+    try {
+      const { data, error } = await supabase.functions.invoke('school-backup-export', { body: { school_id: school.id } });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `school-backup-${school.code || school.id}-${new Date().toISOString().slice(0, 10)}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success(`Exported ${data.stats?.total_rows ?? 0} rows`, { id: t });
+    } catch (err: any) {
+      toast.error(err.message || 'Export failed', { id: t });
+    } finally {
+      setExportingId(null);
+    }
+  };
+
+  const handleImportFile = async (file: File) => {
+    setImporting(true);
+    setImportResult(null);
+    const t = toast.loading('Importing school backup…');
+    try {
+      const text = await file.text();
+      const backup = JSON.parse(text);
+      const { data, error } = await supabase.functions.invoke('school-backup-import', { body: { backup } });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      setImportResult(data);
+      toast.success(`Imported school: ${data.new_school?.name}`, { id: t });
+      fetchSchools();
+    } catch (err: any) {
+      toast.error(err.message || 'Import failed', { id: t });
+    } finally {
+      setImporting(false);
+      if (fileRef.current) fileRef.current.value = '';
+    }
+  };
+
   if (loading) return (
     <div className="flex items-center justify-center h-64">
       <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
@@ -108,10 +155,19 @@ const SchoolsPage = () => {
           <p className="text-muted-foreground text-sm mt-1">{schools.length} registered schools</p>
         </div>
         {isDeveloper && (
-          <button onClick={() => { setShowAdd(true); setAddError(''); }}
-            className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-xl font-medium text-sm hover:opacity-90 transition-all">
-            <Plus className="w-4 h-4" /> Add School
-          </button>
+          <div className="flex items-center gap-2">
+            <input ref={fileRef} type="file" accept="application/json" className="hidden"
+              onChange={(e) => e.target.files?.[0] && handleImportFile(e.target.files[0])} />
+            <button onClick={() => fileRef.current?.click()} disabled={importing}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl border border-border bg-background font-medium text-sm hover:bg-muted disabled:opacity-50">
+              {importing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+              Import Backup
+            </button>
+            <button onClick={() => { setShowAdd(true); setAddError(''); }}
+              className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-xl font-medium text-sm hover:opacity-90 transition-all">
+              <Plus className="w-4 h-4" /> Add School
+            </button>
+          </div>
         )}
       </div>
 
@@ -129,10 +185,16 @@ const SchoolsPage = () => {
                     {school.is_active ? 'Active' : 'Inactive'}
                   </span>
                   {isDeveloper && (
-                    <button onClick={() => { setDeleteConfirm(school); setDeleteTyped(''); }}
-                      className="p-1.5 rounded-lg text-destructive hover:bg-destructive/10 transition-colors" title="Delete School">
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                    <>
+                      <button onClick={() => handleExport(school)} disabled={exportingId === school.id}
+                        className="p-1.5 rounded-lg text-blue-600 hover:bg-blue-50 transition-colors disabled:opacity-50" title="Export Backup">
+                        {exportingId === school.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+                      </button>
+                      <button onClick={() => { setDeleteConfirm(school); setDeleteTyped(''); }}
+                        className="p-1.5 rounded-lg text-destructive hover:bg-destructive/10 transition-colors" title="Delete School">
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </>
                   )}
                 </div>
               </div>
@@ -163,6 +225,32 @@ const SchoolsPage = () => {
           </div>
         )}
       </div>
+
+      {importResult && (
+        <div className="bg-card rounded-2xl border border-border shadow-card p-5 space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="font-bold text-sm">Import Complete: {importResult.new_school?.name}</h3>
+            <button onClick={() => setImportResult(null)} className="p-1.5 rounded-lg hover:bg-muted"><X className="w-4 h-4" /></button>
+          </div>
+          <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs">
+            🔑 All restored users have a temporary password: <code className="font-mono font-bold">{importResult.temp_password}</code>. Reset them from the Users page.
+          </div>
+          <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 text-xs">
+            {Object.entries(importResult.inserted || {}).map(([k, v]: any) => (
+              <div key={k} className="bg-muted/40 rounded-lg p-2 text-center">
+                <div className="font-bold text-base">{v as number}</div>
+                <div className="text-[10px] text-muted-foreground">{k}</div>
+              </div>
+            ))}
+          </div>
+          {importResult.errors?.length > 0 && (
+            <details className="text-xs">
+              <summary className="cursor-pointer text-destructive font-medium">{importResult.errors.length} errors</summary>
+              <pre className="mt-2 p-2 bg-muted rounded max-h-40 overflow-auto text-[10px]">{JSON.stringify(importResult.errors, null, 2)}</pre>
+            </details>
+          )}
+        </div>
+      )}
 
       {/* Add School Modal */}
       {showAdd && (
