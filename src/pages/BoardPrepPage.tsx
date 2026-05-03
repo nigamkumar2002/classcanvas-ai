@@ -19,9 +19,20 @@ interface MockExam {
 }
 interface ChapterRow { id: string; name: string; subject_id: string; }
 interface SubjectRow { id: string; name: string; }
+interface WrittenQ {
+  id: string;
+  question_text: string;
+  marks: number;
+  pyq_year: number | null;
+  question_type: string;
+  chapter_id: string;
+  subject_id: string | null;
+  chapter_name?: string;
+  subject_name?: string;
+}
 
 interface SectionCard {
-  key: 'full' | 'chapter' | 'revision';
+  key: 'full' | 'chapter' | 'written' | 'revision';
   title: string;
   subtitle: string;
   countLabel: string;
