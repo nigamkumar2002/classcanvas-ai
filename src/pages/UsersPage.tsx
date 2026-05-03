@@ -169,16 +169,30 @@ const UsersPage = () => {
     }
   };
 
+  // Load classes for edit modal whenever a student is selected for editing
+  useEffect(() => {
+    if (!editUser || editForm.role !== 'student') { setEditClasses([]); return; }
+    const schoolId = editUser.school_id;
+    if (!schoolId) { setEditClasses([]); return; }
+    supabase.from('classes').select('id, name').eq('school_id', schoolId).order('name')
+      .then(({ data }) => setEditClasses(data || []));
+  }, [editUser, editForm.role]);
+
   const handleEditUser = async () => {
-    if (!editUser || !editForm.full_name.trim()) return;
+    if (!editUser || !editForm.full_name.trim() || !editForm.email.trim()) return;
+    if (editForm.role === 'student' && !editForm.class_id) {
+      toast.error('Please assign a class for this student');
+      return;
+    }
     setEditLoading(true);
     try {
       const { data, error } = await supabase.functions.invoke('update-user', {
         body: {
           target_user_id: editUser.user_id,
           full_name: editForm.full_name.trim(),
+          email: editForm.email.trim(),
           role: editForm.role,
-          class_id: editForm.class_id || null,
+          class_id: editForm.role === 'student' ? editForm.class_id : null,
         },
       });
       if (error) throw error;
