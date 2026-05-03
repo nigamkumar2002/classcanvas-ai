@@ -41,6 +41,7 @@ const UsersPage = () => {
   const [editUser, setEditUser] = useState<Profile | null>(null);
   const [editForm, setEditForm] = useState({ full_name: '', email: '', role: '', class_id: '' });
   const [editLoading, setEditLoading] = useState(false);
+  const [editClasses, setEditClasses] = useState<{id: string; name: string}[]>([]);
 
   // Drill-down: clicking a role card filters to that role
   const [drillRole, setDrillRole] = useState<string | null>(null);
