@@ -22,6 +22,10 @@ const SchoolsPage = () => {
   const [deleteConfirm, setDeleteConfirm] = useState<SchoolItem | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteTyped, setDeleteTyped] = useState('');
+  const [exportingId, setExportingId] = useState<string | null>(null);
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState<any>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   const isDeveloper = user?.role === 'developer';
 
