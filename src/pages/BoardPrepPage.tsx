@@ -211,9 +211,22 @@ const BoardPrepPage: React.FC = () => {
   }
 
   const subjectChapters = (sid: string) => chapters.filter(c => c.subject_id === sid);
+  const writtenSubjects = Array.from(new Map(written.map(w => [w.subject_name || 'General', w.subject_name || 'General'])).keys()).sort();
+  const writtenYears = Array.from(new Set(written.map(w => w.pyq_year).filter(Boolean) as number[])).sort((a, b) => b - a);
+  const filteredWritten = written.filter(w =>
+    (writtenSubject === 'all' || w.subject_name === writtenSubject) &&
+    (writtenYear === 'all' || String(w.pyq_year) === writtenYear)
+  );
+  const writtenGroups = filteredWritten.reduce<Record<string, WrittenQ[]>>((acc, w) => {
+    const key = `${w.subject_name} • ${w.chapter_name} • ${w.pyq_year || 'N/A'}`;
+    (acc[key] ||= []).push(w);
+    return acc;
+  }, {});
+
   const sectionCards: SectionCard[] = [
-    { key: 'full', title: 'Full Mock Tests', subtitle: 'Approved year-wise subject mocks', countLabel: `${mocks.length} ready` },
+    { key: 'full', title: 'Full Mock Tests (MCQ)', subtitle: 'Approved year-wise subject mocks', countLabel: `${mocks.length} ready` },
     { key: 'chapter', title: 'Chapter Mock Tests', subtitle: 'Subject-wise chapter practice', countLabel: `${chapters.length} chapters` },
+    { key: 'written', title: 'Written / Subjective', subtitle: 'PYQ written questions by subject + chapter', countLabel: `${written.length} questions` },
     { key: 'revision', title: 'Revision Tests', subtitle: 'Focused student revision sets', countLabel: `${revisionCount} revision items` },
   ];
 
