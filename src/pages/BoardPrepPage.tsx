@@ -49,7 +49,10 @@ const BoardPrepPage: React.FC = () => {
   const [revisionCount, setRevisionCount] = useState(0);
   const [generating, setGenerating] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeSection, setActiveSection] = useState<'full' | 'chapter' | 'revision'>('full');
+  const [activeSection, setActiveSection] = useState<'full' | 'chapter' | 'written' | 'revision'>('full');
+  const [written, setWritten] = useState<WrittenQ[]>([]);
+  const [writtenSubject, setWrittenSubject] = useState<string>('all');
+  const [writtenYear, setWrittenYear] = useState<string>('all');
 
   const isStaff = user && ['developer', 'super_admin', 'admin'].includes(user.role);
   const canRename = user && ['developer', 'super_admin', 'admin'].includes(user.role);
