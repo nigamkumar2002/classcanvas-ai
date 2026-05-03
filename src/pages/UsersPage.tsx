@@ -46,6 +46,9 @@ const UsersPage = () => {
 
   // Drill-down: clicking a role card filters to that role
   const [drillRole, setDrillRole] = useState<string | null>(null);
+  // Details modal
+  const [detailsUser, setDetailsUser] = useState<Profile | null>(null);
+  const [classNamesById, setClassNamesById] = useState<Record<string, string>>({});
 
   const myRole = user?.role || 'student';
   const isDeveloper = myRole === 'developer';
