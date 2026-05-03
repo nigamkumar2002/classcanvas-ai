@@ -443,6 +443,10 @@ const UsersPage = () => {
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-1">
+                          <button onClick={() => setDetailsUser(u)}
+                            className="p-2 rounded-lg text-muted-foreground hover:bg-muted transition-colors" title="View details">
+                            <Eye className="w-4 h-4" />
+                          </button>
                           {canEditUsers && (
                             <button onClick={() => {
                               setEditUser(u);
