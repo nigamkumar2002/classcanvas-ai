@@ -350,6 +350,46 @@ const BoardPrepPage: React.FC = () => {
         )}
       </section>
 
+      {/* Written / Subjective */}
+      <section className={activeSection === 'written' ? 'block' : 'hidden'}>
+        <h2 className="text-xl font-bold mb-3 flex items-center gap-2"><BookOpen className="w-5 h-5 text-rose-500" /> Written / Subjective Questions</h2>
+        <div className="flex flex-wrap gap-2 mb-4">
+          <select value={writtenSubject} onChange={e => setWrittenSubject(e.target.value)} className="border rounded-lg p-2 text-sm bg-background">
+            <option value="all">All subjects</option>
+            {writtenSubjects.map(s => <option key={s} value={s}>{s}</option>)}
+          </select>
+          <select value={writtenYear} onChange={e => setWrittenYear(e.target.value)} className="border rounded-lg p-2 text-sm bg-background">
+            <option value="all">All years</option>
+            {writtenYears.map(y => <option key={y} value={String(y)}>{y}</option>)}
+          </select>
+          <span className="text-sm text-muted-foreground self-center">{filteredWritten.length} questions</span>
+        </div>
+        {filteredWritten.length === 0 ? (
+          <p className="text-muted-foreground bg-muted/40 p-6 rounded-xl text-center">No written questions {isStaff ? 'yet — upload a PYQ PDF.' : 'available yet.'}</p>
+        ) : (
+          <div className="space-y-3">
+            {Object.entries(writtenGroups).map(([group, items]) => (
+              <details key={group} open className="bg-card border rounded-xl p-4">
+                <summary className="font-semibold cursor-pointer">{group} <span className="text-xs text-muted-foreground">({items.length})</span></summary>
+                <div className="mt-3 space-y-2">
+                  {items.map((w, idx) => (
+                    <div key={w.id} className="p-3 border rounded-lg text-sm bg-muted/20">
+                      <div className="flex items-start justify-between gap-3">
+                        <p className="font-medium whitespace-pre-wrap">{idx + 1}. {w.question_text}</p>
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 whitespace-nowrap">{w.marks} mark{w.marks !== 1 ? 's' : ''}</span>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {w.subject_name} → {w.chapter_name} · Year {w.pyq_year || 'N/A'} · {w.question_type?.replace('_', ' ')}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </details>
+            ))}
+          </div>
+        )}
+      </section>
+
       {/* Mixed + Revision */}
       <section className={activeSection === 'revision' ? 'grid grid-cols-1 md:grid-cols-2 gap-4' : 'hidden'}>
         <button onClick={() => generateTest('mixed')} disabled={generating !== null}
