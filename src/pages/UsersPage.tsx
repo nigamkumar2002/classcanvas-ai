@@ -106,6 +106,12 @@ const UsersPage = () => {
         const { data: schoolData } = await supabase.from('schools').select('id, name, code');
         setSchools((schoolData as SchoolItem[]) || []);
       }
+
+      // class id -> name map for student details
+      const { data: classRows } = await supabase.from('classes').select('id, name');
+      const map: Record<string, string> = {};
+      (classRows || []).forEach((c: any) => { map[c.id] = c.name; });
+      setClassNamesById(map);
     } catch (error) {
       console.error('Failed to fetch users:', error);
     } finally {
