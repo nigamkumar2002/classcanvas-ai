@@ -9,6 +9,7 @@ interface Profile {
   id: string; user_id: string; full_name: string; email: string;
   role: string; is_demo: boolean; created_at: string; school_id?: string;
   class_id?: string; admission_no?: string; roll_no?: string; section?: string;
+  date_of_birth?: string;
 }
 
 interface SchoolItem { id: string; name: string; code: string; }
