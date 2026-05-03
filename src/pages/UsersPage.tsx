@@ -9,6 +9,7 @@ interface Profile {
   id: string; user_id: string; full_name: string; email: string;
   role: string; is_demo: boolean; created_at: string; school_id?: string;
   class_id?: string; admission_no?: string; roll_no?: string; section?: string;
+  date_of_birth?: string;
 }
 
 interface SchoolItem { id: string; name: string; code: string; }
@@ -45,6 +46,9 @@ const UsersPage = () => {
 
   // Drill-down: clicking a role card filters to that role
   const [drillRole, setDrillRole] = useState<string | null>(null);
+  // Details modal
+  const [detailsUser, setDetailsUser] = useState<Profile | null>(null);
+  const [classNamesById, setClassNamesById] = useState<Record<string, string>>({});
 
   const myRole = user?.role || 'student';
   const isDeveloper = myRole === 'developer';
@@ -102,6 +106,12 @@ const UsersPage = () => {
         const { data: schoolData } = await supabase.from('schools').select('id, name, code');
         setSchools((schoolData as SchoolItem[]) || []);
       }
+
+      // class id -> name map for student details
+      const { data: classRows } = await supabase.from('classes').select('id, name');
+      const map: Record<string, string> = {};
+      (classRows || []).forEach((c: any) => { map[c.id] = c.name; });
+      setClassNamesById(map);
     } catch (error) {
       console.error('Failed to fetch users:', error);
     } finally {
@@ -433,6 +443,10 @@ const UsersPage = () => {
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-1">
+                          <button onClick={() => setDetailsUser(u)}
+                            className="p-2 rounded-lg text-muted-foreground hover:bg-muted transition-colors" title="View details">
+                            <Eye className="w-4 h-4" />
+                          </button>
                           {canEditUsers && (
                             <button onClick={() => {
                               setEditUser(u);
@@ -696,6 +710,43 @@ const UsersPage = () => {
                 {deletingUser ? <div className="w-4 h-4 border-2 border-destructive-foreground border-t-transparent rounded-full animate-spin" /> : <Trash2 className="w-4 h-4" />}
                 {deletingUser ? 'Removing...' : 'Remove User'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* User details modal */}
+      {detailsUser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+          <div className="bg-card rounded-2xl shadow-xl border border-border w-full max-w-md">
+            <div className="flex items-center justify-between p-6 border-b border-border">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center"><Eye className="w-5 h-5 text-primary" /></div>
+                <h2 className="text-lg font-bold">User Details</h2>
+              </div>
+              <button onClick={() => setDetailsUser(null)} className="p-2 rounded-xl hover:bg-muted"><X className="w-5 h-5" /></button>
+            </div>
+            <div className="p-6 space-y-3 text-sm">
+              {[
+                ['Full name', detailsUser.full_name],
+                ['Email', detailsUser.email],
+                ['Role', ROLE_CONFIG[detailsUser.role]?.label || detailsUser.role],
+                ['Class', detailsUser.class_id ? (classNamesById[detailsUser.class_id] || '—') : '—'],
+                ['Admission No.', detailsUser.admission_no || '—'],
+                ['Roll No.', detailsUser.roll_no || '—'],
+                ['Section', detailsUser.section || '—'],
+                ['Date of birth', detailsUser.date_of_birth ? new Date(detailsUser.date_of_birth).toLocaleDateString() : '—'],
+                ['Joined', new Date(detailsUser.created_at).toLocaleString()],
+                ['Status', detailsUser.is_demo ? 'Demo' : 'Active'],
+              ].map(([k, v]) => (
+                <div key={k} className="flex justify-between gap-3 border-b border-border/50 pb-2">
+                  <span className="text-muted-foreground">{k}</span>
+                  <span className="font-medium text-right break-all">{v as string}</span>
+                </div>
+              ))}
+            </div>
+            <div className="flex gap-3 p-6 border-t border-border">
+              <button onClick={() => setDetailsUser(null)} className="flex-1 py-2.5 rounded-xl border border-border font-medium text-sm hover:bg-muted">Close</button>
             </div>
           </div>
         </div>

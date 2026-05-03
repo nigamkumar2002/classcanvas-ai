@@ -19,9 +19,20 @@ interface MockExam {
 }
 interface ChapterRow { id: string; name: string; subject_id: string; }
 interface SubjectRow { id: string; name: string; }
+interface WrittenQ {
+  id: string;
+  question_text: string;
+  marks: number;
+  pyq_year: number | null;
+  question_type: string;
+  chapter_id: string;
+  subject_id: string | null;
+  chapter_name?: string;
+  subject_name?: string;
+}
 
 interface SectionCard {
-  key: 'full' | 'chapter' | 'revision';
+  key: 'full' | 'chapter' | 'written' | 'revision';
   title: string;
   subtitle: string;
   countLabel: string;
@@ -38,7 +49,10 @@ const BoardPrepPage: React.FC = () => {
   const [revisionCount, setRevisionCount] = useState(0);
   const [generating, setGenerating] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeSection, setActiveSection] = useState<'full' | 'chapter' | 'revision'>('full');
+  const [activeSection, setActiveSection] = useState<'full' | 'chapter' | 'written' | 'revision'>('full');
+  const [written, setWritten] = useState<WrittenQ[]>([]);
+  const [writtenSubject, setWrittenSubject] = useState<string>('all');
+  const [writtenYear, setWrittenYear] = useState<string>('all');
 
   const isStaff = user && ['developer', 'super_admin', 'admin'].includes(user.role);
   const canRename = user && ['developer', 'super_admin', 'admin'].includes(user.role);
@@ -133,6 +147,26 @@ const BoardPrepPage: React.FC = () => {
         setSubjects([]);
       }
 
+      // Written / subjective questions
+      const { data: wRows } = await (supabase as any)
+        .from('written_questions')
+        .select('id, question_text, marks, pyq_year, question_type, chapter_id, subject_id, chapter:chapters(name, subject:subjects(name))')
+        .order('pyq_year', { ascending: false })
+        .order('order_index', { ascending: true })
+        .limit(2000);
+      const enrichedWritten: WrittenQ[] = (wRows || []).map((w: any) => ({
+        id: w.id,
+        question_text: w.question_text,
+        marks: w.marks,
+        pyq_year: w.pyq_year,
+        question_type: w.question_type,
+        chapter_id: w.chapter_id,
+        subject_id: w.subject_id,
+        chapter_name: w.chapter?.name || 'Unmapped',
+        subject_name: w.chapter?.subject?.name || 'General',
+      }));
+      setWritten(enrichedWritten);
+
       // Revision count
       if (user.role === 'student') {
         const { count } = await (supabase as any)
@@ -177,9 +211,22 @@ const BoardPrepPage: React.FC = () => {
   }
 
   const subjectChapters = (sid: string) => chapters.filter(c => c.subject_id === sid);
+  const writtenSubjects = Array.from(new Map(written.map(w => [w.subject_name || 'General', w.subject_name || 'General'])).keys()).sort();
+  const writtenYears = Array.from(new Set(written.map(w => w.pyq_year).filter(Boolean) as number[])).sort((a, b) => b - a);
+  const filteredWritten = written.filter(w =>
+    (writtenSubject === 'all' || w.subject_name === writtenSubject) &&
+    (writtenYear === 'all' || String(w.pyq_year) === writtenYear)
+  );
+  const writtenGroups = filteredWritten.reduce<Record<string, WrittenQ[]>>((acc, w) => {
+    const key = `${w.subject_name} • ${w.chapter_name} • ${w.pyq_year || 'N/A'}`;
+    (acc[key] ||= []).push(w);
+    return acc;
+  }, {});
+
   const sectionCards: SectionCard[] = [
-    { key: 'full', title: 'Full Mock Tests', subtitle: 'Approved year-wise subject mocks', countLabel: `${mocks.length} ready` },
+    { key: 'full', title: 'Full Mock Tests (MCQ)', subtitle: 'Approved year-wise subject mocks', countLabel: `${mocks.length} ready` },
     { key: 'chapter', title: 'Chapter Mock Tests', subtitle: 'Subject-wise chapter practice', countLabel: `${chapters.length} chapters` },
+    { key: 'written', title: 'Written / Subjective', subtitle: 'PYQ written questions by subject + chapter', countLabel: `${written.length} questions` },
     { key: 'revision', title: 'Revision Tests', subtitle: 'Focused student revision sets', countLabel: `${revisionCount} revision items` },
   ];
 
@@ -206,7 +253,7 @@ const BoardPrepPage: React.FC = () => {
         </div>
       </div>
 
-      <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {sectionCards.map((card) => {
           const isActive = activeSection === card.key;
           return (
@@ -294,6 +341,46 @@ const BoardPrepPage: React.FC = () => {
                           <Pencil className="w-3 h-3" />
                         </button>
                       )}
+                    </div>
+                  ))}
+                </div>
+              </details>
+            ))}
+          </div>
+        )}
+      </section>
+
+      {/* Written / Subjective */}
+      <section className={activeSection === 'written' ? 'block' : 'hidden'}>
+        <h2 className="text-xl font-bold mb-3 flex items-center gap-2"><BookOpen className="w-5 h-5 text-rose-500" /> Written / Subjective Questions</h2>
+        <div className="flex flex-wrap gap-2 mb-4">
+          <select value={writtenSubject} onChange={e => setWrittenSubject(e.target.value)} className="border rounded-lg p-2 text-sm bg-background">
+            <option value="all">All subjects</option>
+            {writtenSubjects.map(s => <option key={s} value={s}>{s}</option>)}
+          </select>
+          <select value={writtenYear} onChange={e => setWrittenYear(e.target.value)} className="border rounded-lg p-2 text-sm bg-background">
+            <option value="all">All years</option>
+            {writtenYears.map(y => <option key={y} value={String(y)}>{y}</option>)}
+          </select>
+          <span className="text-sm text-muted-foreground self-center">{filteredWritten.length} questions</span>
+        </div>
+        {filteredWritten.length === 0 ? (
+          <p className="text-muted-foreground bg-muted/40 p-6 rounded-xl text-center">No written questions {isStaff ? 'yet — upload a PYQ PDF.' : 'available yet.'}</p>
+        ) : (
+          <div className="space-y-3">
+            {Object.entries(writtenGroups).map(([group, items]) => (
+              <details key={group} open className="bg-card border rounded-xl p-4">
+                <summary className="font-semibold cursor-pointer">{group} <span className="text-xs text-muted-foreground">({items.length})</span></summary>
+                <div className="mt-3 space-y-2">
+                  {items.map((w, idx) => (
+                    <div key={w.id} className="p-3 border rounded-lg text-sm bg-muted/20">
+                      <div className="flex items-start justify-between gap-3">
+                        <p className="font-medium whitespace-pre-wrap">{idx + 1}. {w.question_text}</p>
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 whitespace-nowrap">{w.marks} mark{w.marks !== 1 ? 's' : ''}</span>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {w.subject_name} → {w.chapter_name} · Year {w.pyq_year || 'N/A'} · {w.question_type?.replace('_', ' ')}
+                      </p>
                     </div>
                   ))}
                 </div>
