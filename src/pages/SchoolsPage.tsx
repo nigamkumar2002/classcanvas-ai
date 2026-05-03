@@ -185,10 +185,16 @@ const SchoolsPage = () => {
                     {school.is_active ? 'Active' : 'Inactive'}
                   </span>
                   {isDeveloper && (
-                    <button onClick={() => { setDeleteConfirm(school); setDeleteTyped(''); }}
-                      className="p-1.5 rounded-lg text-destructive hover:bg-destructive/10 transition-colors" title="Delete School">
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                    <>
+                      <button onClick={() => handleExport(school)} disabled={exportingId === school.id}
+                        className="p-1.5 rounded-lg text-blue-600 hover:bg-blue-50 transition-colors disabled:opacity-50" title="Export Backup">
+                        {exportingId === school.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+                      </button>
+                      <button onClick={() => { setDeleteConfirm(school); setDeleteTyped(''); }}
+                        className="p-1.5 rounded-lg text-destructive hover:bg-destructive/10 transition-colors" title="Delete School">
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </>
                   )}
                 </div>
               </div>
