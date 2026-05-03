@@ -147,6 +147,26 @@ const BoardPrepPage: React.FC = () => {
         setSubjects([]);
       }
 
+      // Written / subjective questions
+      const { data: wRows } = await (supabase as any)
+        .from('written_questions')
+        .select('id, question_text, marks, pyq_year, question_type, chapter_id, subject_id, chapter:chapters(name, subject:subjects(name))')
+        .order('pyq_year', { ascending: false })
+        .order('order_index', { ascending: true })
+        .limit(2000);
+      const enrichedWritten: WrittenQ[] = (wRows || []).map((w: any) => ({
+        id: w.id,
+        question_text: w.question_text,
+        marks: w.marks,
+        pyq_year: w.pyq_year,
+        question_type: w.question_type,
+        chapter_id: w.chapter_id,
+        subject_id: w.subject_id,
+        chapter_name: w.chapter?.name || 'Unmapped',
+        subject_name: w.chapter?.subject?.name || 'General',
+      }));
+      setWritten(enrichedWritten);
+
       // Revision count
       if (user.role === 'student') {
         const { count } = await (supabase as any)
