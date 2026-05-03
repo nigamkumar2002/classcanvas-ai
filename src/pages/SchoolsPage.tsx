@@ -98,6 +98,49 @@ const SchoolsPage = () => {
     }
   };
 
+  const handleExport = async (school: SchoolItem) => {
+    setExportingId(school.id);
+    const t = toast.loading(`Exporting ${school.name}…`);
+    try {
+      const { data, error } = await supabase.functions.invoke('school-backup-export', { body: { school_id: school.id } });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `school-backup-${school.code || school.id}-${new Date().toISOString().slice(0, 10)}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success(`Exported ${data.stats?.total_rows ?? 0} rows`, { id: t });
+    } catch (err: any) {
+      toast.error(err.message || 'Export failed', { id: t });
+    } finally {
+      setExportingId(null);
+    }
+  };
+
+  const handleImportFile = async (file: File) => {
+    setImporting(true);
+    setImportResult(null);
+    const t = toast.loading('Importing school backup…');
+    try {
+      const text = await file.text();
+      const backup = JSON.parse(text);
+      const { data, error } = await supabase.functions.invoke('school-backup-import', { body: { backup } });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      setImportResult(data);
+      toast.success(`Imported school: ${data.new_school?.name}`, { id: t });
+      fetchSchools();
+    } catch (err: any) {
+      toast.error(err.message || 'Import failed', { id: t });
+    } finally {
+      setImporting(false);
+      if (fileRef.current) fileRef.current.value = '';
+    }
+  };
+
   if (loading) return (
     <div className="flex items-center justify-center h-64">
       <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
