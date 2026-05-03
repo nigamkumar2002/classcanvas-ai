@@ -226,6 +226,32 @@ const SchoolsPage = () => {
         )}
       </div>
 
+      {importResult && (
+        <div className="bg-card rounded-2xl border border-border shadow-card p-5 space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="font-bold text-sm">Import Complete: {importResult.new_school?.name}</h3>
+            <button onClick={() => setImportResult(null)} className="p-1.5 rounded-lg hover:bg-muted"><X className="w-4 h-4" /></button>
+          </div>
+          <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs">
+            🔑 All restored users have a temporary password: <code className="font-mono font-bold">{importResult.temp_password}</code>. Reset them from the Users page.
+          </div>
+          <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 text-xs">
+            {Object.entries(importResult.inserted || {}).map(([k, v]: any) => (
+              <div key={k} className="bg-muted/40 rounded-lg p-2 text-center">
+                <div className="font-bold text-base">{v as number}</div>
+                <div className="text-[10px] text-muted-foreground">{k}</div>
+              </div>
+            ))}
+          </div>
+          {importResult.errors?.length > 0 && (
+            <details className="text-xs">
+              <summary className="cursor-pointer text-destructive font-medium">{importResult.errors.length} errors</summary>
+              <pre className="mt-2 p-2 bg-muted rounded max-h-40 overflow-auto text-[10px]">{JSON.stringify(importResult.errors, null, 2)}</pre>
+            </details>
+          )}
+        </div>
+      )}
+
       {/* Add School Modal */}
       {showAdd && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
