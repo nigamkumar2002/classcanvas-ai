@@ -253,7 +253,7 @@ const BoardPrepPage: React.FC = () => {
         </div>
       </div>
 
-      <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {sectionCards.map((card) => {
           const isActive = activeSection === card.key;
           return (
