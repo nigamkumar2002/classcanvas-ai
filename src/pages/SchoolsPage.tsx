@@ -1,7 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
-import { School, BookOpen, Users, GraduationCap, FileText, Plus, X, Trash2, AlertTriangle } from 'lucide-react';
+import { School, BookOpen, Users, GraduationCap, FileText, Plus, X, Trash2, AlertTriangle, Download, Upload, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface SchoolItem {
