@@ -155,10 +155,19 @@ const SchoolsPage = () => {
           <p className="text-muted-foreground text-sm mt-1">{schools.length} registered schools</p>
         </div>
         {isDeveloper && (
-          <button onClick={() => { setShowAdd(true); setAddError(''); }}
-            className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-xl font-medium text-sm hover:opacity-90 transition-all">
-            <Plus className="w-4 h-4" /> Add School
-          </button>
+          <div className="flex items-center gap-2">
+            <input ref={fileRef} type="file" accept="application/json" className="hidden"
+              onChange={(e) => e.target.files?.[0] && handleImportFile(e.target.files[0])} />
+            <button onClick={() => fileRef.current?.click()} disabled={importing}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl border border-border bg-background font-medium text-sm hover:bg-muted disabled:opacity-50">
+              {importing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+              Import Backup
+            </button>
+            <button onClick={() => { setShowAdd(true); setAddError(''); }}
+              className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-xl font-medium text-sm hover:opacity-90 transition-all">
+              <Plus className="w-4 h-4" /> Add School
+            </button>
+          </div>
         )}
       </div>
 
