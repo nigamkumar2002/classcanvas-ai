@@ -329,7 +329,7 @@ async function extractAll(fileName: string, pyqYear: number | null, pdfBase64: s
   return { detectedSubject, objectiveCount: objectiveCount || mcqs.length, subjectiveCount: subjectiveCount || written.length, mcqs, written, warnings };
 }
 
-async function processInBackground(uploadId: string, supabaseUrl: string, serviceKey: string, lovableKey: string) {
+async function processInBackground(uploadId: string, supabaseUrl: string, serviceKey: string, lovableKey: string, authHeader: string, classId?: string) {
   const admin = createClient(supabaseUrl, serviceKey);
 
   try {
@@ -377,6 +377,26 @@ async function processInBackground(uploadId: string, supabaseUrl: string, servic
       error_log: null,
       status: 'completed',
     }).eq('id', uploadId);
+
+    if (classId) {
+      await admin.from('pyq_uploads').update({
+        status: 'processing',
+        extraction_meta: { ...meta, written_questions: writtenOut, progress_message: 'Saving MCQ and written questions…', progress_at: new Date().toISOString(), class_id: classId },
+      }).eq('id', uploadId);
+
+      const approveResp = await fetch(`${supabaseUrl}/functions/v1/approve-pyq-upload`, {
+        method: 'POST',
+        headers: { Authorization: authHeader, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ upload_id: uploadId, class_id: classId }),
+      });
+      if (!approveResp.ok) {
+        const approveText = await approveResp.text();
+        await admin.from('pyq_uploads').update({
+          status: 'completed',
+          error_log: `Extracted but auto-save failed: ${approveText.slice(0, 500)}`,
+        }).eq('id', uploadId);
+      }
+    }
   } catch (e) {
     console.error('Background processing failed:', e);
     await admin.from('pyq_uploads').update({
@@ -397,7 +417,7 @@ Deno.serve(async (req) => {
     const authHeader = req.headers.get('authorization');
     if (!authHeader) return json({ error: 'Unauthorized' }, 401);
 
-    const { upload_id } = await req.json();
+    const { upload_id, class_id } = await req.json();
     if (!upload_id) return json({ error: 'upload_id required' }, 400);
 
     const userClient = createClient(supabaseUrl, supabaseAnonKey, { global: { headers: { Authorization: authHeader } } });
@@ -413,7 +433,7 @@ Deno.serve(async (req) => {
     await admin.from('pyq_uploads').update({ status: 'processing', error_log: null }).eq('id', upload_id);
 
     // @ts-ignore - EdgeRuntime is available in Supabase Edge Functions
-    EdgeRuntime.waitUntil(processInBackground(upload_id, supabaseUrl, serviceKey, lovableKey));
+    EdgeRuntime.waitUntil(processInBackground(upload_id, supabaseUrl, serviceKey, lovableKey, authHeader, class_id));
 
     return json({ success: true, upload_id, status: 'processing', message: 'Extraction started in background. Poll status.' }, 202);
   } catch (e) {

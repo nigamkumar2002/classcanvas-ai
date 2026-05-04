@@ -119,52 +119,76 @@ const BoardPrepPage: React.FC = () => {
 
       setMocks(Array.from(deduped.values()).sort((a, b) => (b.pyq_year || 0) - (a.pyq_year || 0) || b.question_count - a.question_count));
 
-      // Subjects + chapters that have PYQ questions (scoped to user's school via RLS)
-      const { data: qs } = await supabase
-        .from('questions')
-        .select('chapter_id')
-        .eq('source', 'pyq')
-        .not('chapter_id', 'is', null) as any;
-      const chapterIds = Array.from(new Set((qs || []).map((q: any) => q.chapter_id).filter(Boolean))) as string[];
-      if (chapterIds.length) {
+      // MCQ chapter practice + Written / subjective questions (scoped by RLS)
+      const [{ data: qs }, { data: wRows, error: wErr }] = await Promise.all([
+        supabase
+          .from('questions')
+          .select('chapter_id')
+          .eq('source', 'pyq')
+          .not('chapter_id', 'is', null),
+        (supabase as any)
+          .from('written_questions')
+          .select('id, question_text, marks, pyq_year, question_type, chapter_id, subject_id, order_index')
+          .eq('source', 'pyq')
+          .order('pyq_year', { ascending: false })
+          .order('order_index', { ascending: true })
+          .limit(5000),
+      ]) as any;
+
+      if (wErr) console.error('Written PYQ load failed', wErr);
+
+      const mcqChapterIds = Array.from(new Set((qs || []).map((q: any) => q.chapter_id).filter(Boolean))) as string[];
+      const writtenChapterIds = Array.from(new Set((wRows || []).map((w: any) => w.chapter_id).filter(Boolean))) as string[];
+      const lookupChapterIds = Array.from(new Set([...mcqChapterIds, ...writtenChapterIds]));
+
+      let chapterLookupRows: ChapterRow[] = [];
+      if (lookupChapterIds.length) {
         const { data: chRows } = await supabase
           .from('chapters')
           .select('id, name, subject_id')
-          .in('id', chapterIds)
+          .in('id', lookupChapterIds)
           .order('name') as any;
-        setChapters(chRows || []);
-        const subjIds = Array.from(new Set((chRows || []).map((c: any) => c.subject_id))) as string[];
-        if (subjIds.length) {
-          const { data: sRows } = await supabase
-            .from('subjects')
-            .select('id, name')
-            .in('id', subjIds)
-            .order('name') as any;
-          setSubjects(sRows || []);
-        }
-      } else {
-        setChapters([]);
-        setSubjects([]);
+        chapterLookupRows = chRows || [];
       }
 
-      // Written / subjective questions
-      const { data: wRows } = await (supabase as any)
-        .from('written_questions')
-        .select('id, question_text, marks, pyq_year, question_type, chapter_id, subject_id, chapter:chapters(name, subject:subjects(name))')
-        .order('pyq_year', { ascending: false })
-        .order('order_index', { ascending: true })
-        .limit(2000);
-      const enrichedWritten: WrittenQ[] = (wRows || []).map((w: any) => ({
-        id: w.id,
-        question_text: w.question_text,
-        marks: w.marks,
-        pyq_year: w.pyq_year,
-        question_type: w.question_type,
-        chapter_id: w.chapter_id,
-        subject_id: w.subject_id,
-        chapter_name: w.chapter?.name || 'Unmapped',
-        subject_name: w.chapter?.subject?.name || 'General',
-      }));
+      const chapterById = new Map(chapterLookupRows.map(c => [c.id, c]));
+      const subjectIds = Array.from(new Set([
+        ...chapterLookupRows.map(c => c.subject_id),
+        ...(wRows || []).map((w: any) => w.subject_id),
+      ].filter(Boolean))) as string[];
+
+      let subjectRows: SubjectRow[] = [];
+      if (subjectIds.length) {
+        const { data: sRows } = await supabase
+          .from('subjects')
+          .select('id, name')
+          .in('id', subjectIds)
+          .order('name') as any;
+        subjectRows = sRows || [];
+      }
+
+      const subjectById = new Map(subjectRows.map(s => [s.id, s]));
+      const mcqChapterSet = new Set(mcqChapterIds);
+      const mcqChapters = chapterLookupRows.filter(c => mcqChapterSet.has(c.id));
+      const mcqSubjectSet = new Set(mcqChapters.map(c => c.subject_id));
+      setChapters(mcqChapters);
+      setSubjects(subjectRows.filter(s => mcqSubjectSet.has(s.id)));
+
+      const enrichedWritten: WrittenQ[] = (wRows || []).map((w: any) => {
+        const chapter = chapterById.get(w.chapter_id);
+        const subject = subjectById.get(w.subject_id || chapter?.subject_id || '');
+        return {
+          id: w.id,
+          question_text: w.question_text,
+          marks: w.marks,
+          pyq_year: w.pyq_year,
+          question_type: w.question_type,
+          chapter_id: w.chapter_id,
+          subject_id: w.subject_id,
+          chapter_name: chapter?.name || 'Unmapped',
+          subject_name: subject?.name || 'General',
+        };
+      });
       setWritten(enrichedWritten);
 
       // Revision count
