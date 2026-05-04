@@ -2019,7 +2019,29 @@ export type Database = {
           updated_at?: string
           upload_id?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "written_questions_chapter_id_fkey"
+            columns: ["chapter_id"]
+            isOneToOne: false
+            referencedRelation: "chapters"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "written_questions_subject_id_fkey"
+            columns: ["subject_id"]
+            isOneToOne: false
+            referencedRelation: "subjects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "written_questions_upload_id_fkey"
+            columns: ["upload_id"]
+            isOneToOne: false
+            referencedRelation: "pyq_uploads"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Views: {
