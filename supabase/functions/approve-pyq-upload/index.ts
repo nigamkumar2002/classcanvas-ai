@@ -36,6 +36,17 @@ const inferSubject = (items: any[]) => {
   return [...f.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || 'general';
 };
 
+const uniqueByHash = <T extends { hash: string; q?: any; w?: any }>(items: T[]) => {
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    const year = item.q?.pyq_year || item.w?.pyq_year || '';
+    const key = `${item.hash}:${year}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+};
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
 
@@ -122,14 +133,16 @@ Deno.serve(async (req) => {
 
     if (mcqs && mcqs.length > 0) {
       // Resolve all chapters first
-      const prepared: Array<any> = [];
+      const preparedRaw: Array<any> = [];
       for (const q of mcqs) {
         const r = await resolveChapter(q.subject_name, q.chapter_name);
         if (!r) { mcqSkipped++; continue; }
         const hashSrc = normalize(q.question_text) + '|' + [q.option_a, q.option_b, q.option_c, q.option_d].map(normalize).sort().join('|');
         const hash = await sha256(hashSrc);
-        prepared.push({ q, ...r, hash });
+        preparedRaw.push({ q, ...r, hash });
       }
+      const prepared = uniqueByHash(preparedRaw);
+      mcqSkipped += preparedRaw.length - prepared.length;
 
       const firstChapterId = prepared[0]?.chapterId;
       if (!firstChapterId) return json({ error: 'No valid chapter mapping for MCQs' }, 400);
@@ -174,7 +187,7 @@ Deno.serve(async (req) => {
       for (const p of prepared) {
         const { data: dup } = await admin.from('questions')
           .select('id').eq('school_id', upload.school_id)
-          .eq('chapter_id', p.chapterId).eq('question_hash', p.hash).maybeSingle();
+          .eq('chapter_id', p.chapterId).eq('pyq_year', year).eq('question_hash', p.hash).maybeSingle();
         if (dup) { mcqSkipped++; continue; }
 
         const bQ = parseBilingual(p.q.question_text || '');
@@ -217,31 +230,37 @@ Deno.serve(async (req) => {
 
     if (written && written.length > 0) {
       let order = 0;
+      const preparedRaw: Array<any> = [];
       for (const w of written) {
         const r = await resolveChapter(w.subject_name, w.chapter_name);
         if (!r) { writtenSkipped++; continue; }
         const hashSrc = normalize(w.question_text);
         const hash = await sha256(hashSrc);
+        preparedRaw.push({ w, ...r, hash });
+      }
+      const prepared = uniqueByHash(preparedRaw);
+      writtenSkipped += preparedRaw.length - prepared.length;
 
+      for (const p of prepared) {
         // dedupe via unique index (school, chapter, hash)
         const { data: dup } = await admin.from('written_questions')
           .select('id').eq('school_id', upload.school_id)
-          .eq('chapter_id', r.chapterId).eq('question_hash', hash).maybeSingle();
+          .eq('chapter_id', p.chapterId).eq('pyq_year', year).eq('question_hash', p.hash).maybeSingle();
         if (dup) { writtenSkipped++; continue; }
 
         const { error: wErr } = await admin.from('written_questions').insert({
           school_id: upload.school_id,
-          chapter_id: r.chapterId,
-          subject_id: r.subjectId,
+          chapter_id: p.chapterId,
+          subject_id: p.subjectId,
           upload_id: upload.id,
-          question_text: w.question_text,
-          marks: w.marks || 2,
+          question_text: p.w.question_text,
+          marks: p.w.marks || 2,
           pyq_year: year,
-          question_type: w.question_type || 'short_answer',
-          difficulty: w.difficulty || 'medium',
+          question_type: p.w.question_type || 'short_answer',
+          difficulty: p.w.difficulty || 'medium',
           source: 'pyq',
-          question_hash: hash,
-          tags: [`subject:${normalize(r.subjName)}`, `chapter:${normalize(r.chapName)}`, 'lang:hi-en'],
+          question_hash: p.hash,
+          tags: [`subject:${normalize(p.subjName)}`, `chapter:${normalize(p.chapName)}`, 'lang:hi-en'],
           order_index: order++,
           created_by: user.id,
         });
