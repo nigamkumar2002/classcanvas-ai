@@ -40,7 +40,7 @@ const UsersPage = () => {
 
   // Edit user modal
   const [editUser, setEditUser] = useState<Profile | null>(null);
-  const [editForm, setEditForm] = useState({ full_name: '', email: '', role: '', class_id: '' });
+  const [editForm, setEditForm] = useState({ full_name: '', email: '', role: '', class_id: '', admission_no: '', roll_no: '', section: '', date_of_birth: '' });
   const [editLoading, setEditLoading] = useState(false);
   const [editClasses, setEditClasses] = useState<{id: string; name: string}[]>([]);
 
@@ -203,6 +203,10 @@ const UsersPage = () => {
           email: editForm.email.trim(),
           role: editForm.role,
           class_id: editForm.role === 'student' ? editForm.class_id : null,
+          admission_no: editForm.role === 'student' ? editForm.admission_no.trim() || null : null,
+          roll_no: editForm.role === 'student' ? editForm.roll_no.trim() || null : null,
+          section: editForm.role === 'student' ? editForm.section.trim() || null : null,
+          date_of_birth: editForm.role === 'student' ? editForm.date_of_birth || null : null,
         },
       });
       if (error) throw error;
