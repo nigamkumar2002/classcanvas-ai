@@ -25,6 +25,11 @@ interface UploadRow {
 const getUploadSubject = (upload: UploadRow) =>
   upload.extraction_meta?.detected_subject || upload.extracted_questions?.[0]?.subject_name || 'Subject pending';
 
+const isStuckProcessing = (upload: UploadRow) =>
+  upload.status === 'processing' && Date.now() - new Date(upload.created_at).getTime() > 120000;
+
+const canRestartUpload = (upload: UploadRow) => upload.status === 'failed' || isStuckProcessing(upload);
+
 const BoardPrepUploadPage: React.FC = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -122,6 +127,14 @@ const BoardPrepUploadPage: React.FC = () => {
     refresh();
   };
 
+  const restartExtraction = async (upload: UploadRow) => {
+    if (!classId) { toast.error('Pick a Class 10 to attach questions to'); return; }
+    const { error } = await supabase.functions.invoke('ingest-pyq-pdf', { body: { upload_id: upload.id, class_id: classId } });
+    if (error) { toast.error(error.message); return; }
+    toast.success('Extraction restarted');
+    refresh();
+  };
+
   return (
     <div className="space-y-6 max-w-6xl mx-auto">
       <div className="flex items-center justify-between">
@@ -161,10 +174,10 @@ const BoardPrepUploadPage: React.FC = () => {
                     <p className="text-xs text-muted-foreground">
                       {getUploadSubject(u)} · Year {u.pyq_year}
                       {' · '}MCQ: {u.questions_extracted} extracted / {u.questions_inserted} saved
-                      {(u.written_extracted ?? 0) > 0 && (
-                        <> · Written: {u.written_extracted} extracted / {u.written_inserted ?? 0} saved</>
-                      )}
+                      {' · '}Written: {u.written_extracted ?? 0} extracted / {u.written_inserted ?? 0} saved
                       {' · '}{u.questions_skipped} dupes
+                      {u.extraction_meta?.progress_message && <> · {u.extraction_meta.progress_message}</>}
+                      {canRestartUpload(u) && <> · restart available</>}
                     </p>
                   </div>
                 </div>
@@ -192,6 +205,9 @@ const BoardPrepUploadPage: React.FC = () => {
                   )}
                   {u.status === 'completed' && canApprove && (
                     <button onClick={() => setReviewing(u)} className="text-sm px-3 py-1 bg-primary text-primary-foreground rounded-lg">Review & Approve</button>
+                  )}
+                  {canRestartUpload(u) && (
+                    <button onClick={() => restartExtraction(u)} className="text-sm px-3 py-1 border border-border rounded-lg hover:bg-muted">Restart fast extraction</button>
                   )}
                   {u.status === 'approved' && <CheckCircle className="w-4 h-4 text-green-600" />}
                   {u.status === 'completed' && !canApprove && (

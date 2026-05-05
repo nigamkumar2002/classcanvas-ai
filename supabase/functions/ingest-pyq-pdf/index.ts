@@ -229,20 +229,44 @@ const WRITTEN_BATCH_SCHEMA = {
   },
 };
 
-async function callAiStructured(lovableKey: string, body: Record<string, unknown>) {
-  const models = ['google/gemini-3-flash-preview', 'google/gemini-2.5-pro'];
+const FULL_EXTRACTION_SCHEMA = {
+  type: 'function' as const,
+  function: {
+    name: 'save_pyq_full_paper',
+    description: 'Return complete BSEB Class 10 PYQ extraction: all MCQs and all written/subjective questions.',
+    parameters: {
+      type: 'object',
+      properties: {
+        paper_subject_name: { type: 'string', enum: [...SUBJECT_NAMES] },
+        objective_question_count: { type: 'integer', minimum: 0, maximum: 200 },
+        subjective_question_count: { type: 'integer', minimum: 0, maximum: 120 },
+        mcq_questions: MCQ_BATCH_SCHEMA.function.parameters.properties.mcq_questions,
+        written_questions: WRITTEN_BATCH_SCHEMA.function.parameters.properties.written_questions,
+      },
+      required: ['paper_subject_name', 'objective_question_count', 'subjective_question_count', 'mcq_questions', 'written_questions'],
+      additionalProperties: false,
+    },
+  },
+};
+
+async function callAiStructured(lovableKey: string, body: Record<string, unknown>, timeoutMs = 55000, models = ['google/gemini-3-flash-preview']) {
   let lastError: unknown = null;
   for (const model of models) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
     try {
       const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
         method: 'POST',
         headers: { Authorization: `Bearer ${lovableKey}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model, ...body }),
+        body: JSON.stringify({ model, temperature: 0, max_tokens: 32000, ...body }),
+        signal: controller.signal,
       });
       return await parseToolCall(response);
     } catch (e) {
       lastError = e;
       console.warn(`Extraction model ${model} failed:`, e instanceof Error ? e.message : e);
+    } finally {
+      clearTimeout(timeout);
     }
   }
   throw lastError instanceof Error ? lastError : new Error('AI extraction failed');
@@ -288,6 +312,30 @@ async function callWrittenBatch(lovableKey: string, fileName: string, pdfBase64:
   return { fallbackSubject, subjectiveCount, written };
 }
 
+async function callFullExtraction(lovableKey: string, fileName: string, pdfBase64: string, pyqYear: number | null) {
+  const parsed = await callAiStructured(lovableKey, {
+    messages: [
+      { role: 'system', content: `You are a fast, exact BSEB Class 10 PYQ extractor. Extract the complete paper in one pass: every MCQ and every non-MCQ written/subjective question. Preserve official question numbers. Include Hindi and English for all question/options; translate only when one language is missing. Infer A/B/C/D answer if the answer key is absent. chapter_name must exactly match the NCERT Class 10 chapter list. Return no explanations.` },
+      { role: 'user', content: [
+        { type: 'text', text: `BSEB Class 10 PYQ paper${pyqYear ? ` for year ${pyqYear}` : ''}. Extract ALL MCQs and ALL written/subjective questions. Keep this under one minute by returning compact structured data only.\n\n${NCERT_CHAPTERS}` },
+        { type: 'file', file: { filename: fileName, file_data: `data:application/pdf;base64,${pdfBase64}` } },
+      ] },
+    ],
+    tools: [FULL_EXTRACTION_SCHEMA],
+    tool_choice: { type: 'function', function: { name: 'save_pyq_full_paper' } },
+  }, 58000, ['google/gemini-3-flash-preview']);
+  const fallbackSubject = normalizeSubject(parsed.paper_subject_name);
+  const objectiveCount = Math.max(0, Math.min(200, Math.floor(Number(parsed.objective_question_count) || 0)));
+  const subjectiveCount = Math.max(0, Math.min(120, Math.floor(Number(parsed.subjective_question_count) || 0)));
+  const mcqs: ExtractedMCQ[] = Array.isArray(parsed.mcq_questions)
+    ? parsed.mcq_questions.map((m: RawMCQ) => normalizeMCQ(m, fallbackSubject)).filter((x: ExtractedMCQ | null): x is ExtractedMCQ => Boolean(x))
+    : [];
+  const written: ExtractedWritten[] = Array.isArray(parsed.written_questions)
+    ? parsed.written_questions.map((w: RawWritten) => normalizeWritten(w, fallbackSubject)).filter((x: ExtractedWritten | null): x is ExtractedWritten => Boolean(x))
+    : [];
+  return { fallbackSubject, objectiveCount, subjectiveCount, mcqs, written };
+}
+
 async function extractAll(fileName: string, pyqYear: number | null, pdfBase64: string, lovableKey: string, onProgress?: (message: string, mcqCount: number, writtenCount: number) => Promise<void>) {
   const mcqMap = new Map<number, ExtractedMCQ>();
   const writtenMap = new Map<number, ExtractedWritten>();
@@ -296,31 +344,39 @@ async function extractAll(fileName: string, pyqYear: number | null, pdfBase64: s
   let objectiveCount = 0;
   let subjectiveCount = 0;
 
-  await onProgress?.('Extracting MCQs in fast batches…', 0, 0);
-  const ranges = [[1, 20], [21, 40], [41, 60], [61, 80], [81, 100]];
-  const mcqResults = await Promise.all(ranges.map(async ([start, end]) => {
-    try {
-      return { start, end, batch: await callMcqBatch(lovableKey, fileName, pdfBase64, pyqYear, start, end), error: null as string | null };
-    } catch (e) {
-      return { start, end, batch: null, error: `MCQ ${start}-${end} failed: ${e instanceof Error ? e.message : 'Unknown error'}` };
-    }
-  }));
-  for (const r of mcqResults) {
-    if (r.error || !r.batch) { warnings.push(r.error || 'MCQ batch failed'); continue; }
-    detectedSubject = r.batch.fallbackSubject || detectedSubject;
-    objectiveCount = Math.max(objectiveCount, r.batch.objectiveCount);
-    for (const q of r.batch.mcqs) mcqMap.set(q.question_number, { ...q, subject_name: q.subject_name || detectedSubject });
-  }
-  await onProgress?.(`Extracted ${mcqMap.size} MCQs. Checking written questions…`, mcqMap.size, 0);
-
+  await onProgress?.('Fast extraction started…', 0, 0);
   try {
-    await onProgress?.('Extracting written questions…', mcqMap.size, writtenMap.size);
-    const wb = await callWrittenBatch(lovableKey, fileName, pdfBase64, pyqYear);
-    detectedSubject = wb.fallbackSubject || detectedSubject;
-    subjectiveCount = wb.subjectiveCount;
-    for (const w of wb.written) writtenMap.set(w.question_number, { ...w, subject_name: w.subject_name || detectedSubject });
+    const full = await callFullExtraction(lovableKey, fileName, pdfBase64, pyqYear);
+    detectedSubject = full.fallbackSubject || detectedSubject;
+    objectiveCount = full.objectiveCount;
+    subjectiveCount = full.subjectiveCount;
+    for (const q of full.mcqs) mcqMap.set(q.question_number, { ...q, subject_name: q.subject_name || detectedSubject });
+    for (const w of full.written) writtenMap.set(w.question_number, { ...w, subject_name: w.subject_name || detectedSubject });
+    await onProgress?.(`Extracted ${mcqMap.size} MCQs and ${writtenMap.size} written questions.`, mcqMap.size, writtenMap.size);
   } catch (e) {
-    warnings.push(`Written extraction failed: ${e instanceof Error ? e.message : 'Unknown error'}`);
+    warnings.push(`Fast one-pass extraction failed: ${e instanceof Error ? e.message : 'Unknown error'}`);
+  }
+
+  if (mcqMap.size === 0 && writtenMap.size === 0) {
+    await onProgress?.('Retrying extraction in smaller batches…', 0, 0);
+    const [mcqResults, writtenResult] = await Promise.all([
+      Promise.all([[1, 20], [21, 40], [41, 60], [61, 80], [81, 100]].map(async ([start, end]) => {
+        try { return { batch: await callMcqBatch(lovableKey, fileName, pdfBase64, pyqYear, start, end), error: null as string | null }; }
+        catch (e) { return { batch: null, error: `MCQ ${start}-${end} failed: ${e instanceof Error ? e.message : 'Unknown error'}` }; }
+      })),
+      callWrittenBatch(lovableKey, fileName, pdfBase64, pyqYear).then((batch) => ({ batch, error: null as string | null })).catch((e) => ({ batch: null, error: `Written extraction failed: ${e instanceof Error ? e.message : 'Unknown error'}` })),
+    ]);
+    for (const r of mcqResults) {
+      if (r.error || !r.batch) { warnings.push(r.error || 'MCQ batch failed'); continue; }
+      detectedSubject = r.batch.fallbackSubject || detectedSubject;
+      objectiveCount = Math.max(objectiveCount, r.batch.objectiveCount);
+      for (const q of r.batch.mcqs) mcqMap.set(q.question_number, { ...q, subject_name: q.subject_name || detectedSubject });
+    }
+    if (writtenResult.batch) {
+      detectedSubject = writtenResult.batch.fallbackSubject || detectedSubject;
+      subjectiveCount = writtenResult.batch.subjectiveCount;
+      for (const w of writtenResult.batch.written) writtenMap.set(w.question_number, { ...w, subject_name: w.subject_name || detectedSubject });
+    } else if (writtenResult.error) warnings.push(writtenResult.error);
   }
 
   const mcqs = Array.from(mcqMap.values()).sort((a, b) => a.question_number - b.question_number);
@@ -338,8 +394,32 @@ async function processInBackground(uploadId: string, supabaseUrl: string, servic
     const { data: upload, error: upErr } = await admin.from('pyq_uploads').select('*').eq('id', uploadId).single();
     if (upErr || !upload) throw new Error('Upload not found');
 
+    if ((upload.extracted_questions?.length || 0) > 0 || (upload.extraction_meta?.written_questions?.length || 0) > 0) {
+      if (classId && upload.status !== 'approved') {
+        await admin.from('pyq_uploads').update({
+          status: 'processing',
+          error_log: null,
+          extraction_meta: { ...(upload.extraction_meta || {}), progress_message: 'Saving already extracted questions…', progress_at: new Date().toISOString(), class_id: classId },
+        }).eq('id', uploadId);
+        const approveResp = await fetch(`${supabaseUrl}/functions/v1/approve-pyq-upload`, {
+          method: 'POST',
+          headers: { Authorization: authHeader, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ upload_id: uploadId, class_id: classId }),
+        });
+        if (!approveResp.ok) throw new Error(`Auto-save failed: ${(await approveResp.text()).slice(0, 500)}`);
+      } else {
+        await admin.from('pyq_uploads').update({ status: upload.status === 'approved' ? 'approved' : 'completed', error_log: null }).eq('id', uploadId);
+      }
+      return;
+    }
+
     const fileResp = await fetch(upload.file_url);
     if (!fileResp.ok) throw new Error(`Cannot fetch PDF: ${fileResp.status}`);
+
+    const contentLength = Number(fileResp.headers.get('content-length') || 0);
+    if (contentLength > 19_500_000) {
+      throw new Error('PDF is too large for fast AI extraction. Please upload a compressed PDF under 19 MB.');
+    }
 
     const pdfBase64 = encodeBase64(new Uint8Array(await fileResp.arrayBuffer()));
     const progress = async (message: string, mcqCount: number, writtenCount: number) => {
@@ -429,6 +509,14 @@ Deno.serve(async (req) => {
     const { data: roleRow } = await admin.from('user_roles').select('role').eq('user_id', user.id).single();
     const role = roleRow?.role;
     if (!['admin', 'super_admin', 'developer', 'teacher'].includes(role)) return json({ error: 'Forbidden' }, 403);
+
+    const { data: upload } = await admin.from('pyq_uploads').select('id, status, created_at').eq('id', upload_id).single();
+    if (!upload) return json({ error: 'Upload not found' }, 404);
+    const createdAt = upload.created_at ? new Date(upload.created_at).getTime() : Date.now();
+    const stuckProcessing = upload.status === 'processing' && Date.now() - createdAt > 90_000;
+    if (upload.status === 'processing' && !stuckProcessing) {
+      return json({ success: true, upload_id, status: 'processing', message: 'Extraction is already running.' }, 202);
+    }
 
     await admin.from('pyq_uploads').update({ status: 'processing', error_log: null }).eq('id', upload_id);
 

@@ -14,6 +14,10 @@ const BodySchema = z.object({
   email: z.string().email(),
   role: z.enum(['super_admin', 'admin', 'teacher', 'student']),
   class_id: z.string().uuid().nullable().optional(),
+  admission_no: z.string().trim().max(80).nullable().optional(),
+  roll_no: z.string().trim().max(80).nullable().optional(),
+  section: z.string().trim().max(80).nullable().optional(),
+  date_of_birth: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
 });
 
 const json = (body: Record<string, unknown>, status = 200) =>
@@ -36,7 +40,7 @@ Deno.serve(async (req) => {
     const parsed = BodySchema.safeParse(await req.json());
     if (!parsed.success) return json({ error: parsed.error.flatten() }, 400);
 
-    const { target_user_id, full_name, email, role, class_id } = parsed.data;
+    const { target_user_id, full_name, email, role, class_id, admission_no, roll_no, section, date_of_birth } = parsed.data;
 
     const supabaseUser = createClient(supabaseUrl, supabaseAnonKey, {
       global: { headers: { Authorization: authHeader } },
@@ -131,6 +135,10 @@ Deno.serve(async (req) => {
         email,
         role,
         class_id: nextClassId,
+        admission_no: role === 'student' ? (admission_no || null) : null,
+        roll_no: role === 'student' ? (roll_no || null) : null,
+        section: role === 'student' ? (section || null) : null,
+        date_of_birth: role === 'student' ? (date_of_birth || null) : null,
         updated_at: new Date().toISOString(),
       })
       .eq('user_id', target_user_id);
