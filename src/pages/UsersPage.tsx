@@ -579,7 +579,7 @@ const UsersPage = () => {
       {/* Edit User Modal */}
       {editUser && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-          <div className="bg-card rounded-2xl shadow-xl border border-border w-full max-w-md">
+          <div className="bg-card rounded-2xl shadow-xl border border-border w-full max-w-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between p-6 border-b border-border">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center"><Pencil className="w-5 h-5 text-primary" /></div>
@@ -606,14 +606,36 @@ const UsersPage = () => {
                 </select>
               </div>
               {editForm.role === 'student' && (
-                <div>
-                  <label className="text-sm font-semibold mb-1.5 block flex items-center gap-1"><GraduationCap className="w-3.5 h-3.5" /> Assigned Class *</label>
-                  <select value={editForm.class_id} onChange={e => setEditForm(f => ({ ...f, class_id: e.target.value }))}
-                    className="w-full px-4 py-2.5 rounded-xl border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 text-sm">
-                    <option value="">Select class...</option>
-                    {editClasses.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                  </select>
-                  <p className="text-xs text-muted-foreground mt-1">Changing the class will move the student instantly.</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="sm:col-span-2">
+                    <label className="text-sm font-semibold mb-1.5 block flex items-center gap-1"><GraduationCap className="w-3.5 h-3.5" /> Assigned Class *</label>
+                    <select value={editForm.class_id} onChange={e => setEditForm(f => ({ ...f, class_id: e.target.value }))}
+                      className="w-full px-4 py-2.5 rounded-xl border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 text-sm">
+                      <option value="">Select class...</option>
+                      {editClasses.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    </select>
+                    <p className="text-xs text-muted-foreground mt-1">Changing the class will move the student instantly.</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-semibold mb-1.5 block">Admission No.</label>
+                    <input value={editForm.admission_no} onChange={e => setEditForm(f => ({ ...f, admission_no: e.target.value }))}
+                      className="w-full px-4 py-2.5 rounded-xl border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 text-sm" />
+                  </div>
+                  <div>
+                    <label className="text-sm font-semibold mb-1.5 block">Roll No.</label>
+                    <input value={editForm.roll_no} onChange={e => setEditForm(f => ({ ...f, roll_no: e.target.value }))}
+                      className="w-full px-4 py-2.5 rounded-xl border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 text-sm" />
+                  </div>
+                  <div>
+                    <label className="text-sm font-semibold mb-1.5 block">Section</label>
+                    <input value={editForm.section} onChange={e => setEditForm(f => ({ ...f, section: e.target.value }))}
+                      className="w-full px-4 py-2.5 rounded-xl border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 text-sm" />
+                  </div>
+                  <div>
+                    <label className="text-sm font-semibold mb-1.5 block">Date of birth</label>
+                    <input type="date" value={editForm.date_of_birth} onChange={e => setEditForm(f => ({ ...f, date_of_birth: e.target.value }))}
+                      className="w-full px-4 py-2.5 rounded-xl border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 text-sm" />
+                  </div>
                 </div>
               )}
             </div>
