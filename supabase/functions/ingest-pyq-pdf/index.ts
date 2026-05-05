@@ -395,8 +395,32 @@ async function processInBackground(uploadId: string, supabaseUrl: string, servic
     const { data: upload, error: upErr } = await admin.from('pyq_uploads').select('*').eq('id', uploadId).single();
     if (upErr || !upload) throw new Error('Upload not found');
 
+    if ((upload.extracted_questions?.length || 0) > 0 || (upload.extraction_meta?.written_questions?.length || 0) > 0) {
+      if (classId && upload.status !== 'approved') {
+        await admin.from('pyq_uploads').update({
+          status: 'processing',
+          error_log: null,
+          extraction_meta: { ...(upload.extraction_meta || {}), progress_message: 'Saving already extracted questions…', progress_at: new Date().toISOString(), class_id: classId },
+        }).eq('id', uploadId);
+        const approveResp = await fetch(`${supabaseUrl}/functions/v1/approve-pyq-upload`, {
+          method: 'POST',
+          headers: { Authorization: authHeader, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ upload_id: uploadId, class_id: classId }),
+        });
+        if (!approveResp.ok) throw new Error(`Auto-save failed: ${(await approveResp.text()).slice(0, 500)}`);
+      } else {
+        await admin.from('pyq_uploads').update({ status: upload.status === 'approved' ? 'approved' : 'completed', error_log: null }).eq('id', uploadId);
+      }
+      return;
+    }
+
     const fileResp = await fetch(upload.file_url);
     if (!fileResp.ok) throw new Error(`Cannot fetch PDF: ${fileResp.status}`);
+
+    const contentLength = Number(fileResp.headers.get('content-length') || 0);
+    if (contentLength > 19_500_000) {
+      throw new Error('PDF is too large for fast AI extraction. Please upload a compressed PDF under 19 MB.');
+    }
 
     const pdfBase64 = encodeBase64(new Uint8Array(await fileResp.arrayBuffer()));
     const progress = async (message: string, mcqCount: number, writtenCount: number) => {
