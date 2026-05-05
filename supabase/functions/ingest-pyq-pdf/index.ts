@@ -249,8 +249,7 @@ const FULL_EXTRACTION_SCHEMA = {
   },
 };
 
-async function callAiStructured(lovableKey: string, body: Record<string, unknown>, timeoutMs = 55000) {
-  const models = ['google/gemini-3-flash-preview', 'google/gemini-2.5-flash'];
+async function callAiStructured(lovableKey: string, body: Record<string, unknown>, timeoutMs = 55000, models = ['google/gemini-3-flash-preview']) {
   let lastError: unknown = null;
   for (const model of models) {
     const controller = new AbortController();
@@ -324,7 +323,7 @@ async function callFullExtraction(lovableKey: string, fileName: string, pdfBase6
     ],
     tools: [FULL_EXTRACTION_SCHEMA],
     tool_choice: { type: 'function', function: { name: 'save_pyq_full_paper' } },
-  }, 58000);
+  }, 58000, ['google/gemini-3-flash-preview']);
   const fallbackSubject = normalizeSubject(parsed.paper_subject_name);
   const objectiveCount = Math.max(0, Math.min(200, Math.floor(Number(parsed.objective_question_count) || 0)));
   const subjectiveCount = Math.max(0, Math.min(120, Math.floor(Number(parsed.subjective_question_count) || 0)));
