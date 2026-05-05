@@ -28,6 +28,8 @@ const getUploadSubject = (upload: UploadRow) =>
 const isStuckProcessing = (upload: UploadRow) =>
   upload.status === 'processing' && Date.now() - new Date(upload.created_at).getTime() > 120000;
 
+const canRestartUpload = (upload: UploadRow) => upload.status === 'failed' || isStuckProcessing(upload);
+
 const BoardPrepUploadPage: React.FC = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -175,7 +177,7 @@ const BoardPrepUploadPage: React.FC = () => {
                       {' · '}Written: {u.written_extracted ?? 0} extracted / {u.written_inserted ?? 0} saved
                       {' · '}{u.questions_skipped} dupes
                       {u.extraction_meta?.progress_message && <> · {u.extraction_meta.progress_message}</>}
-                      {isStuckProcessing(u) && <> · taking longer than expected</>}
+                      {canRestartUpload(u) && <> · restart available</>}
                     </p>
                   </div>
                 </div>
@@ -204,7 +206,7 @@ const BoardPrepUploadPage: React.FC = () => {
                   {u.status === 'completed' && canApprove && (
                     <button onClick={() => setReviewing(u)} className="text-sm px-3 py-1 bg-primary text-primary-foreground rounded-lg">Review & Approve</button>
                   )}
-                  {isStuckProcessing(u) && (
+                  {canRestartUpload(u) && (
                     <button onClick={() => restartExtraction(u)} className="text-sm px-3 py-1 border border-border rounded-lg hover:bg-muted">Restart fast extraction</button>
                   )}
                   {u.status === 'approved' && <CheckCircle className="w-4 h-4 text-green-600" />}
