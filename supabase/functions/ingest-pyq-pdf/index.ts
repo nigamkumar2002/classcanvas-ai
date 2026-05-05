@@ -511,6 +511,14 @@ Deno.serve(async (req) => {
     const role = roleRow?.role;
     if (!['admin', 'super_admin', 'developer', 'teacher'].includes(role)) return json({ error: 'Forbidden' }, 403);
 
+    const { data: upload } = await admin.from('pyq_uploads').select('id, status, created_at').eq('id', upload_id).single();
+    if (!upload) return json({ error: 'Upload not found' }, 404);
+    const createdAt = upload.created_at ? new Date(upload.created_at).getTime() : Date.now();
+    const stuckProcessing = upload.status === 'processing' && Date.now() - createdAt > 90_000;
+    if (upload.status === 'processing' && !stuckProcessing) {
+      return json({ success: true, upload_id, status: 'processing', message: 'Extraction is already running.' }, 202);
+    }
+
     await admin.from('pyq_uploads').update({ status: 'processing', error_log: null }).eq('id', upload_id);
 
     // @ts-ignore - EdgeRuntime is available in Supabase Edge Functions
