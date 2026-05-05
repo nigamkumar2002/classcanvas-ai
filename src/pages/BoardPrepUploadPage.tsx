@@ -172,10 +172,10 @@ const BoardPrepUploadPage: React.FC = () => {
                     <p className="text-xs text-muted-foreground">
                       {getUploadSubject(u)} · Year {u.pyq_year}
                       {' · '}MCQ: {u.questions_extracted} extracted / {u.questions_inserted} saved
-                      {(u.written_extracted ?? 0) > 0 && (
-                        <> · Written: {u.written_extracted} extracted / {u.written_inserted ?? 0} saved</>
-                      )}
+                      {' · '}Written: {u.written_extracted ?? 0} extracted / {u.written_inserted ?? 0} saved
                       {' · '}{u.questions_skipped} dupes
+                      {u.extraction_meta?.progress_message && <> · {u.extraction_meta.progress_message}</>}
+                      {isStuckProcessing(u) && <> · taking longer than expected</>}
                     </p>
                   </div>
                 </div>
@@ -203,6 +203,9 @@ const BoardPrepUploadPage: React.FC = () => {
                   )}
                   {u.status === 'completed' && canApprove && (
                     <button onClick={() => setReviewing(u)} className="text-sm px-3 py-1 bg-primary text-primary-foreground rounded-lg">Review & Approve</button>
+                  )}
+                  {isStuckProcessing(u) && (
+                    <button onClick={() => restartExtraction(u)} className="text-sm px-3 py-1 border border-border rounded-lg hover:bg-muted">Restart fast extraction</button>
                   )}
                   {u.status === 'approved' && <CheckCircle className="w-4 h-4 text-green-600" />}
                   {u.status === 'completed' && !canApprove && (
