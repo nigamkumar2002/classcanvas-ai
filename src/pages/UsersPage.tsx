@@ -454,7 +454,16 @@ const UsersPage = () => {
                           {canEditUsers && (
                             <button onClick={() => {
                               setEditUser(u);
-                              setEditForm({ full_name: u.full_name, email: u.email, role: u.role, class_id: u.class_id || '' });
+                              setEditForm({
+                                full_name: u.full_name,
+                                email: u.email,
+                                role: u.role,
+                                class_id: u.class_id || '',
+                                admission_no: u.admission_no || '',
+                                roll_no: u.roll_no || '',
+                                section: u.section || '',
+                                date_of_birth: u.date_of_birth || '',
+                              });
                             }}
                               className="p-2 rounded-lg text-muted-foreground hover:bg-muted transition-colors" title="Edit user">
                               <Pencil className="w-4 h-4" />
