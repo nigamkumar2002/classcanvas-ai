@@ -25,6 +25,9 @@ interface UploadRow {
 const getUploadSubject = (upload: UploadRow) =>
   upload.extraction_meta?.detected_subject || upload.extracted_questions?.[0]?.subject_name || 'Subject pending';
 
+const isStuckProcessing = (upload: UploadRow) =>
+  upload.status === 'processing' && Date.now() - new Date(upload.created_at).getTime() > 120000;
+
 const BoardPrepUploadPage: React.FC = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -119,6 +122,14 @@ const BoardPrepUploadPage: React.FC = () => {
     if (error) { toast.error(error.message); return; }
       toast.success(`Saved: ${data.inserted} MCQ + ${data.written_inserted || 0} written. Skipped ${data.skipped + (data.written_skipped || 0)} duplicates.`);
     setReviewing(null);
+    refresh();
+  };
+
+  const restartExtraction = async (upload: UploadRow) => {
+    if (!classId) { toast.error('Pick a Class 10 to attach questions to'); return; }
+    const { error } = await supabase.functions.invoke('ingest-pyq-pdf', { body: { upload_id: upload.id, class_id: classId } });
+    if (error) { toast.error(error.message); return; }
+    toast.success('Extraction restarted');
     refresh();
   };
 
