@@ -10,7 +10,7 @@ const json = (b: unknown, status = 200) =>
 // Order matters: parents before children
 const TABLE_ORDER = [
   'classes', 'subjects', 'chapters', 'materials',
-  'exams', 'questions', 'written_questions',
+  'pyq_uploads', 'exams', 'questions', 'written_questions',
   'lesson_plans', 'lesson_plan_attachments',
   'homework_assignments', 'homework_submissions', 'assignment_submissions',
   'attendance', 'grades', 'certificates', 'fee_records',
@@ -20,7 +20,7 @@ const TABLE_ORDER = [
   'live_sessions', 'live_session_participants',
   'practice_tests', 'practice_questions', 'practice_quotas',
   'study_plans', 'revision_items', 'schedules',
-  'pyq_uploads', 'school_settings', 'board_prep_settings',
+  'school_settings', 'board_prep_settings',
   'exam_results',
 ];
 
