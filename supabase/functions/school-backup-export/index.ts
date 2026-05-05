@@ -26,13 +26,13 @@ const SCHOOL_TABLES = [
 ];
 
 async function fetchAll(admin: any, table: string, schoolId: string) {
+  if (table === 'live_session_participants') return [];
   const out: any[] = [];
   let from = 0;
   const size = 1000;
   while (true) {
     let q: any = admin.from(table).select('*').range(from, from + size - 1);
-    // live_session_participants has no school_id; join via live_sessions later
-    if (table !== 'live_session_participants') q = q.eq('school_id', schoolId);
+    q = q.eq('school_id', schoolId);
     const { data, error } = await q;
     if (error) {
       if (error.message?.includes('does not exist')) return [];
