@@ -229,20 +229,45 @@ const WRITTEN_BATCH_SCHEMA = {
   },
 };
 
-async function callAiStructured(lovableKey: string, body: Record<string, unknown>) {
-  const models = ['google/gemini-3-flash-preview', 'google/gemini-2.5-pro'];
+const FULL_EXTRACTION_SCHEMA = {
+  type: 'function' as const,
+  function: {
+    name: 'save_pyq_full_paper',
+    description: 'Return complete BSEB Class 10 PYQ extraction: all MCQs and all written/subjective questions.',
+    parameters: {
+      type: 'object',
+      properties: {
+        paper_subject_name: { type: 'string', enum: [...SUBJECT_NAMES] },
+        objective_question_count: { type: 'integer', minimum: 0, maximum: 200 },
+        subjective_question_count: { type: 'integer', minimum: 0, maximum: 120 },
+        mcq_questions: MCQ_BATCH_SCHEMA.function.parameters.properties.mcq_questions,
+        written_questions: WRITTEN_BATCH_SCHEMA.function.parameters.properties.written_questions,
+      },
+      required: ['paper_subject_name', 'objective_question_count', 'subjective_question_count', 'mcq_questions', 'written_questions'],
+      additionalProperties: false,
+    },
+  },
+};
+
+async function callAiStructured(lovableKey: string, body: Record<string, unknown>, timeoutMs = 55000) {
+  const models = ['google/gemini-3-flash-preview', 'google/gemini-2.5-flash'];
   let lastError: unknown = null;
   for (const model of models) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
     try {
       const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
         method: 'POST',
         headers: { Authorization: `Bearer ${lovableKey}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model, ...body }),
+        body: JSON.stringify({ model, temperature: 0, max_tokens: 32000, ...body }),
+        signal: controller.signal,
       });
       return await parseToolCall(response);
     } catch (e) {
       lastError = e;
       console.warn(`Extraction model ${model} failed:`, e instanceof Error ? e.message : e);
+    } finally {
+      clearTimeout(timeout);
     }
   }
   throw lastError instanceof Error ? lastError : new Error('AI extraction failed');
