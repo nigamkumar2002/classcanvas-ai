@@ -89,6 +89,13 @@ Deno.serve(async (req) => {
     }
 
     const totalRows = Object.values(data).reduce((s, a) => s + a.length, 0);
+    const analytics = {
+      users_by_role: (data.profiles || []).reduce((acc: Record<string, number>, p: any) => {
+        const role = p.role || 'unknown'; acc[role] = (acc[role] || 0) + 1; return acc;
+      }, {}),
+      exams: { total: data.exams?.length || 0, results: data.exam_results?.length || 0, questions: data.questions?.length || 0, written_questions: data.written_questions?.length || 0 },
+      board_prep: { uploads: data.pyq_uploads?.length || 0, mcq_saved: (data.pyq_uploads || []).reduce((s: number, u: any) => s + (u.questions_inserted || 0), 0), written_saved: (data.pyq_uploads || []).reduce((s: number, u: any) => s + (u.written_inserted || 0), 0) },
+    };
 
     return json({
       version: '1.0',
@@ -96,6 +103,7 @@ Deno.serve(async (req) => {
       exported_by: user.email,
       school,
       tables: data,
+      analytics,
       stats: { total_rows: totalRows, ...Object.fromEntries(Object.entries(data).map(([k, v]) => [k, v.length])) },
       notice: 'Auth passwords are NOT exported (hashed and managed by Supabase). On import, users will get a default temporary password and must reset it.',
     });
