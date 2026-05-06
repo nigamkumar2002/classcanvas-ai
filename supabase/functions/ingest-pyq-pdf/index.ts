@@ -417,6 +417,54 @@ async function extractAll(fileName: string, pyqYear: number | null, pdfBase64: s
   return { detectedSubject, objectiveCount: objectiveCount || mcqs.length, subjectiveCount: subjectiveCount || written.length, mcqs, written, warnings };
 }
 
+async function makePdfChunks(pdfBytes: Uint8Array, pagesPerChunk = 8) {
+  const source = await PDFDocument.load(pdfBytes, { ignoreEncryption: true });
+  const chunks: Array<{ label: string; base64: string }> = [];
+  const total = source.getPageCount();
+  for (let start = 0; start < total; start += pagesPerChunk) {
+    const end = Math.min(total, start + pagesPerChunk);
+    const out = await PDFDocument.create();
+    const copied = await out.copyPages(source, Array.from({ length: end - start }, (_, i) => start + i));
+    copied.forEach((p) => out.addPage(p));
+    const bytes = await out.save({ useObjectStreams: true });
+    chunks.push({ label: `pages-${start + 1}-${end}`, base64: encodeBase64(bytes) });
+  }
+  return chunks;
+}
+
+async function extractChunked(fileName: string, pyqYear: number | null, pdfBytes: Uint8Array, lovableKey: string, onProgress?: (message: string, mcqCount: number, writtenCount: number) => Promise<void>) {
+  const chunks = await makePdfChunks(pdfBytes);
+  const mcqMap = new Map<number, ExtractedMCQ>();
+  const writtenMap = new Map<string, ExtractedWritten>();
+  const warnings: string[] = [];
+  let detectedSubject = 'General';
+  let done = 0;
+
+  await onProgress?.(`Fast chunk extraction started (${chunks.length} chunks)…`, 0, 0);
+  const workers = Array.from({ length: Math.min(3, chunks.length) }, async (_, worker) => {
+    for (let i = worker; i < chunks.length; i += 3) {
+      const c = chunks[i];
+      try {
+        const r = await callChunkExtraction(lovableKey, fileName, c.base64, pyqYear, c.label);
+        detectedSubject = r.fallbackSubject || detectedSubject;
+        for (const q of r.mcqs) mcqMap.set(q.question_number, { ...q, subject_name: q.subject_name || detectedSubject });
+        for (const w of r.written) writtenMap.set(`${w.question_number}:${w.question_text.slice(0, 80)}`, { ...w, subject_name: w.subject_name || detectedSubject });
+      } catch (e) {
+        warnings.push(`${c.label} failed: ${e instanceof Error ? e.message : 'Unknown error'}`);
+      } finally {
+        done++;
+        await onProgress?.(`Processed ${done}/${chunks.length} chunks…`, mcqMap.size, writtenMap.size);
+      }
+    }
+  });
+  await Promise.all(workers);
+
+  const mcqs = Array.from(mcqMap.values()).sort((a, b) => a.question_number - b.question_number);
+  const written = Array.from(writtenMap.values()).sort((a, b) => a.question_number - b.question_number);
+  if (mcqs.length === 0 && written.length === 0) throw new Error(warnings[0] || 'No questions extracted from PDF chunks');
+  return { detectedSubject, objectiveCount: mcqs.length, subjectiveCount: written.length, mcqs, written, warnings };
+}
+
 async function processInBackground(uploadId: string, supabaseUrl: string, serviceKey: string, lovableKey: string, authHeader: string, classId?: string) {
   const admin = createClient(supabaseUrl, serviceKey);
 
