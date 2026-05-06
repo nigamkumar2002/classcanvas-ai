@@ -501,7 +501,7 @@ async function processInBackground(uploadId: string, supabaseUrl: string, servic
       throw new Error('PDF is too large for fast AI extraction. Please upload a compressed PDF under 19 MB.');
     }
 
-    const pdfBase64 = encodeBase64(new Uint8Array(await fileResp.arrayBuffer()));
+    const pdfBytes = new Uint8Array(await fileResp.arrayBuffer());
     const progress = async (message: string, mcqCount: number, writtenCount: number) => {
       await admin.from('pyq_uploads').update({
         questions_extracted: mcqCount,
@@ -513,7 +513,9 @@ async function processInBackground(uploadId: string, supabaseUrl: string, servic
         },
       }).eq('id', uploadId);
     };
-    const result = await extractAll(upload.file_name, upload.pyq_year, pdfBase64, lovableKey, progress);
+    const result = pdfBytes.length > 8_000_000
+      ? await extractChunked(upload.file_name, upload.pyq_year, pdfBytes, lovableKey, progress)
+      : await extractAll(upload.file_name, upload.pyq_year, encodeBase64(pdfBytes), lovableKey, progress);
 
     // Strip number from MCQs (legacy column shape)
     const mcqsOut = result.mcqs.map(({ question_number, ...rest }) => rest);
