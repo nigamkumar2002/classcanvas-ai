@@ -8,6 +8,7 @@
 // - Up to 2 attempts: 1st attempt extracts everything; 2nd attempt fills any missing MCQ numbers.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { encodeBase64 } from 'https://deno.land/std@0.224.0/encoding/base64.ts';
+import { PDFDocument } from 'https://esm.sh/pdf-lib@1.17.1';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -246,6 +247,15 @@ const FULL_EXTRACTION_SCHEMA = {
       required: ['paper_subject_name', 'objective_question_count', 'subjective_question_count', 'mcq_questions', 'written_questions'],
       additionalProperties: false,
     },
+  },
+};
+
+const CHUNK_EXTRACTION_SCHEMA = {
+  type: 'function' as const,
+  function: {
+    ...FULL_EXTRACTION_SCHEMA.function,
+    name: 'save_pyq_page_chunk',
+    description: 'Return only questions visible in this PDF page chunk: MCQs and written/subjective questions.',
   },
 };
 
