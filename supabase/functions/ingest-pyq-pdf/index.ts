@@ -8,6 +8,7 @@
 // - Up to 2 attempts: 1st attempt extracts everything; 2nd attempt fills any missing MCQ numbers.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { encodeBase64 } from 'https://deno.land/std@0.224.0/encoding/base64.ts';
+import { PDFDocument } from 'https://esm.sh/pdf-lib@1.17.1';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -249,6 +250,15 @@ const FULL_EXTRACTION_SCHEMA = {
   },
 };
 
+const CHUNK_EXTRACTION_SCHEMA = {
+  type: 'function' as const,
+  function: {
+    ...FULL_EXTRACTION_SCHEMA.function,
+    name: 'save_pyq_page_chunk',
+    description: 'Return only questions visible in this PDF page chunk: MCQs and written/subjective questions.',
+  },
+};
+
 async function callAiStructured(lovableKey: string, body: Record<string, unknown>, timeoutMs = 55000, models = ['google/gemini-3-flash-preview']) {
   let lastError: unknown = null;
   for (const model of models) {
@@ -336,6 +346,28 @@ async function callFullExtraction(lovableKey: string, fileName: string, pdfBase6
   return { fallbackSubject, objectiveCount, subjectiveCount, mcqs, written };
 }
 
+async function callChunkExtraction(lovableKey: string, fileName: string, pdfBase64: string, pyqYear: number | null, label: string) {
+  const parsed = await callAiStructured(lovableKey, {
+    messages: [
+      { role: 'system', content: `You are a fast BSEB Class 10 PYQ extractor. Extract only questions visible in this PDF chunk (${label}). Return every visible MCQ and every visible written/subjective question. Preserve official question numbers. Include Hindi and English; use '-' only if that language is genuinely absent. Infer A/B/C/D answer if answer key is absent. Return no explanations.` },
+      { role: 'user', content: [
+        { type: 'text', text: `PDF chunk ${label} from a BSEB Class 10 PYQ paper${pyqYear ? ` for year ${pyqYear}` : ''}. Extract all visible MCQs and written/subjective questions quickly.\n\n${NCERT_CHAPTERS}` },
+        { type: 'file', file: { filename: `${label}-${fileName}`, file_data: `data:application/pdf;base64,${pdfBase64}` } },
+      ] },
+    ],
+    tools: [CHUNK_EXTRACTION_SCHEMA],
+    tool_choice: { type: 'function', function: { name: 'save_pyq_page_chunk' } },
+  }, 52000, ['google/gemini-3-flash-preview']);
+  const fallbackSubject = normalizeSubject(parsed.paper_subject_name);
+  const mcqs: ExtractedMCQ[] = Array.isArray(parsed.mcq_questions)
+    ? parsed.mcq_questions.map((m: RawMCQ) => normalizeMCQ(m, fallbackSubject)).filter((x: ExtractedMCQ | null): x is ExtractedMCQ => Boolean(x))
+    : [];
+  const written: ExtractedWritten[] = Array.isArray(parsed.written_questions)
+    ? parsed.written_questions.map((w: RawWritten) => normalizeWritten(w, fallbackSubject)).filter((x: ExtractedWritten | null): x is ExtractedWritten => Boolean(x))
+    : [];
+  return { fallbackSubject, mcqs, written };
+}
+
 async function extractAll(fileName: string, pyqYear: number | null, pdfBase64: string, lovableKey: string, onProgress?: (message: string, mcqCount: number, writtenCount: number) => Promise<void>) {
   const mcqMap = new Map<number, ExtractedMCQ>();
   const writtenMap = new Map<number, ExtractedWritten>();
@@ -385,6 +417,54 @@ async function extractAll(fileName: string, pyqYear: number | null, pdfBase64: s
   return { detectedSubject, objectiveCount: objectiveCount || mcqs.length, subjectiveCount: subjectiveCount || written.length, mcqs, written, warnings };
 }
 
+async function makePdfChunks(pdfBytes: Uint8Array, pagesPerChunk = 8) {
+  const source = await PDFDocument.load(pdfBytes, { ignoreEncryption: true });
+  const chunks: Array<{ label: string; base64: string }> = [];
+  const total = source.getPageCount();
+  for (let start = 0; start < total; start += pagesPerChunk) {
+    const end = Math.min(total, start + pagesPerChunk);
+    const out = await PDFDocument.create();
+    const copied = await out.copyPages(source, Array.from({ length: end - start }, (_, i) => start + i));
+    copied.forEach((p) => out.addPage(p));
+    const bytes = await out.save({ useObjectStreams: true });
+    chunks.push({ label: `pages-${start + 1}-${end}`, base64: encodeBase64(bytes) });
+  }
+  return chunks;
+}
+
+async function extractChunked(fileName: string, pyqYear: number | null, pdfBytes: Uint8Array, lovableKey: string, onProgress?: (message: string, mcqCount: number, writtenCount: number) => Promise<void>) {
+  const chunks = await makePdfChunks(pdfBytes);
+  const mcqMap = new Map<number, ExtractedMCQ>();
+  const writtenMap = new Map<string, ExtractedWritten>();
+  const warnings: string[] = [];
+  let detectedSubject = 'General';
+  let done = 0;
+
+  await onProgress?.(`Fast chunk extraction started (${chunks.length} chunks)…`, 0, 0);
+  const workers = Array.from({ length: Math.min(3, chunks.length) }, async (_, worker) => {
+    for (let i = worker; i < chunks.length; i += 3) {
+      const c = chunks[i];
+      try {
+        const r = await callChunkExtraction(lovableKey, fileName, c.base64, pyqYear, c.label);
+        detectedSubject = r.fallbackSubject || detectedSubject;
+        for (const q of r.mcqs) mcqMap.set(q.question_number, { ...q, subject_name: q.subject_name || detectedSubject });
+        for (const w of r.written) writtenMap.set(`${w.question_number}:${w.question_text.slice(0, 80)}`, { ...w, subject_name: w.subject_name || detectedSubject });
+      } catch (e) {
+        warnings.push(`${c.label} failed: ${e instanceof Error ? e.message : 'Unknown error'}`);
+      } finally {
+        done++;
+        await onProgress?.(`Processed ${done}/${chunks.length} chunks…`, mcqMap.size, writtenMap.size);
+      }
+    }
+  });
+  await Promise.all(workers);
+
+  const mcqs = Array.from(mcqMap.values()).sort((a, b) => a.question_number - b.question_number);
+  const written = Array.from(writtenMap.values()).sort((a, b) => a.question_number - b.question_number);
+  if (mcqs.length === 0 && written.length === 0) throw new Error(warnings[0] || 'No questions extracted from PDF chunks');
+  return { detectedSubject, objectiveCount: mcqs.length, subjectiveCount: written.length, mcqs, written, warnings };
+}
+
 async function processInBackground(uploadId: string, supabaseUrl: string, serviceKey: string, lovableKey: string, authHeader: string, classId?: string) {
   const admin = createClient(supabaseUrl, serviceKey);
 
@@ -421,7 +501,7 @@ async function processInBackground(uploadId: string, supabaseUrl: string, servic
       throw new Error('PDF is too large for fast AI extraction. Please upload a compressed PDF under 19 MB.');
     }
 
-    const pdfBase64 = encodeBase64(new Uint8Array(await fileResp.arrayBuffer()));
+    const pdfBytes = new Uint8Array(await fileResp.arrayBuffer());
     const progress = async (message: string, mcqCount: number, writtenCount: number) => {
       await admin.from('pyq_uploads').update({
         questions_extracted: mcqCount,
@@ -433,7 +513,9 @@ async function processInBackground(uploadId: string, supabaseUrl: string, servic
         },
       }).eq('id', uploadId);
     };
-    const result = await extractAll(upload.file_name, upload.pyq_year, pdfBase64, lovableKey, progress);
+    const result = pdfBytes.length > 8_000_000
+      ? await extractChunked(upload.file_name, upload.pyq_year, pdfBytes, lovableKey, progress)
+      : await extractAll(upload.file_name, upload.pyq_year, encodeBase64(pdfBytes), lovableKey, progress);
 
     // Strip number from MCQs (legacy column shape)
     const mcqsOut = result.mcqs.map(({ question_number, ...rest }) => rest);
