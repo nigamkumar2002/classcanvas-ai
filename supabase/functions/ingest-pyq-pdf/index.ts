@@ -346,6 +346,28 @@ async function callFullExtraction(lovableKey: string, fileName: string, pdfBase6
   return { fallbackSubject, objectiveCount, subjectiveCount, mcqs, written };
 }
 
+async function callChunkExtraction(lovableKey: string, fileName: string, pdfBase64: string, pyqYear: number | null, label: string) {
+  const parsed = await callAiStructured(lovableKey, {
+    messages: [
+      { role: 'system', content: `You are a fast BSEB Class 10 PYQ extractor. Extract only questions visible in this PDF chunk (${label}). Return every visible MCQ and every visible written/subjective question. Preserve official question numbers. Include Hindi and English; use '-' only if that language is genuinely absent. Infer A/B/C/D answer if answer key is absent. Return no explanations.` },
+      { role: 'user', content: [
+        { type: 'text', text: `PDF chunk ${label} from a BSEB Class 10 PYQ paper${pyqYear ? ` for year ${pyqYear}` : ''}. Extract all visible MCQs and written/subjective questions quickly.\n\n${NCERT_CHAPTERS}` },
+        { type: 'file', file: { filename: `${label}-${fileName}`, file_data: `data:application/pdf;base64,${pdfBase64}` } },
+      ] },
+    ],
+    tools: [CHUNK_EXTRACTION_SCHEMA],
+    tool_choice: { type: 'function', function: { name: 'save_pyq_page_chunk' } },
+  }, 52000, ['google/gemini-3-flash-preview']);
+  const fallbackSubject = normalizeSubject(parsed.paper_subject_name);
+  const mcqs: ExtractedMCQ[] = Array.isArray(parsed.mcq_questions)
+    ? parsed.mcq_questions.map((m: RawMCQ) => normalizeMCQ(m, fallbackSubject)).filter((x: ExtractedMCQ | null): x is ExtractedMCQ => Boolean(x))
+    : [];
+  const written: ExtractedWritten[] = Array.isArray(parsed.written_questions)
+    ? parsed.written_questions.map((w: RawWritten) => normalizeWritten(w, fallbackSubject)).filter((x: ExtractedWritten | null): x is ExtractedWritten => Boolean(x))
+    : [];
+  return { fallbackSubject, mcqs, written };
+}
+
 async function extractAll(fileName: string, pyqYear: number | null, pdfBase64: string, lovableKey: string, onProgress?: (message: string, mcqCount: number, writtenCount: number) => Promise<void>) {
   const mcqMap = new Map<number, ExtractedMCQ>();
   const writtenMap = new Map<number, ExtractedWritten>();
